@@ -1,0 +1,39 @@
+// For format details, see https://aka.ms/vscode-remote/devcontainer.json or this file's README at:
+// https://github.com/microsoft/vscode-dev-containers/tree/v0.112.0/containers/javascript-node-12
+{
+	"name": "Node.js 12",
+	"dockerFile": "Dockerfile",
+
+	"runArgs": [
+		"--net=cb_local",
+		"--net-alias=cache",
+		"-p",
+		"63200:63200"
+		// Uncomment the line if you will use a ptrace-based debugger like C++, Go, and Rust.
+		// "--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined",
+
+		// Uncomment the next line to use a non-root user. On Linux, this will prevent
+		// new files getting created as root, but you may need to update the USER_UID
+		// and USER_GID in .devcontainer/Dockerfile to match your user if not 1000.
+		// "-u", "vscode"
+	],
+
+	// Set *default* container specific settings.json values on container create.
+	"settings": { 
+		"terminal.integrated.shell.linux": "/bin/bash"
+	},
+
+	// Add the IDs of extensions you want installed when the container is created.
+	"extensions": [
+		"dbaeumer.vscode-eslint"
+	]
+
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+
+	// Use 'postCreateCommand' to run commands after the container is created.
+	// "postCreateCommand": "yarn install",
+
+	// Uncomment to connect as a non-root user. See https://aka.ms/vscode-remote/containers/non-root.
+	// "remoteUser": "node"
+}

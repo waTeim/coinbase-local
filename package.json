@@ -1,0 +1,25 @@
+{
+  "name": "cb_local",
+  "version": "0.0.1",
+  "description": "CB Replication with some features",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/cors": "^2.8.6",
+    "@types/node": "^12.0.10",
+    "bignumber.js": "^9.0.0",
+    "body-parser": "^1.19.0",
+    "coinbase-pro": "^0.9.0",
+    "commander": "^2.20.0",
+    "cors": "^2.8.5",
+    "moment": "^2.24.0"
+  },
+  "devDependencies": {
+    "jshint": "^2.10.2",
+    "ts-api": "^3.4.5"
+  }
+}
