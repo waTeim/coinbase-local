@@ -23,6 +23,6 @@ Given the above, once running swaggar docs are available [locally](http://localh
 
 ## Notes
 
-The orderbook is synchronized upon the first invokation of a query to it.  The sync ususally takes
+The orderbook is synchronized upon the first invocation of a query to it.  The sync ususally takes
 2-5 seconds and so the response to very fist call will be delayed.  After that calls to `/api/orderBook/interval`
 respond very quickly.
