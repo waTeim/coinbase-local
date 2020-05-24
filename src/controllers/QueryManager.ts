@@ -17,8 +17,10 @@ interface OrderbookInterval
   aggregation:number;
   depth:number;
   date:Date;
-  asks:OrderbookEntry[];
-  bids:OrderbookEntry[];
+  sequence:number;
+  midpoint:string;
+  asks:any[][];
+  bids:any[][];
 };
 
 /**
@@ -51,13 +53,15 @@ export default class QueryManager extends ControllerBase
     let maxBid = state.bids[0].price;
     let agg = BigNumber(aggregation);
     const midpointPrice = minAsk.plus(maxBid).dividedBy(2);
-    const anchor = midpointPrice.dividedBy(agg).integerValue();
+    const anchor = midpointPrice.dividedBy(agg).decimalPlaces(0,BigNumber.ROUND_DOWN);
     let discriminators:any = [[],[]];
+    let sequence = QueryManager.book.sequence(product);
 
+    console.log(`midpoint = ${midpointPrice.toNumber()} anchor = ${anchor.toNumber()}`);
     for(let i = 0;i < depth;i++) 
     {
-      discriminators[0].push(anchor.minus(i + 1).multipliedBy(agg));
-      discriminators[1].push(anchor.plus(i).multipliedBy(agg));
+      discriminators[0].push(anchor.minus(i).multipliedBy(agg));
+      discriminators[1].push(anchor.plus(i + 1).multipliedBy(agg));
     }
 
     let sizeSum = BigNumber(0);
@@ -108,6 +112,8 @@ export default class QueryManager extends ControllerBase
       let price = state.asks[askIndex].price;
       let size = state.asks[askIndex].size;
 
+      //if(currentBucket == 0) console.log(state.asks[askIndex],price.toNumber(),",",size.toNumber());
+
       if(price.gt(discriminators[1][currentBucket]))
       {
         let bucketPrice = priceSum.dividedBy(sizeSum);
@@ -124,6 +130,12 @@ export default class QueryManager extends ControllerBase
     }
     asks.push({ price:priceSum.dividedBy(sizeSum).toNumber(), size:sizeSum.toNumber(), numOrders:numOrders });
 
-    return { aggregation:aggregation, depth:depth, date:now, asks:asks, bids:bids };
+    let askArray:any[][] = [];
+    let bidArray:any[][] = [];
+
+    for(let i = 0;i < asks.length;i++) askArray.push([asks[i].price,asks[i].size,asks[i].numOrders]);
+    for(let i = 0;i < bids.length;i++) bidArray.push([bids[i].price,bids[i].size,bids[i].numOrders]);
+
+    return { aggregation:aggregation, depth:depth, date:now, midpoint:midpointPrice.toString(), sequence:sequence, asks:askArray, bids:bidArray };
   }
 }
