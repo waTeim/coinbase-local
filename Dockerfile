@@ -1,6 +1,6 @@
 FROM node:11
 RUN apt-get update \
-    && apt-get install -y lsof netcat \
+    && apt-get install -y lsof netcat dos2unix \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY . /app
@@ -12,5 +12,7 @@ RUN mkdir -p dist \
 RUN chmod +x entrypoint.sh
 RUN tsc
 RUN cg
+RUN mkdir bin
+RUN dos2unix -n src/bin/cb_proxy bin/cb_proxy
 EXPOSE 63100
 CMD bash entrypoint.sh
