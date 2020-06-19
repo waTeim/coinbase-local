@@ -1,0 +1,36 @@
+#!/usr/bin/env node
+"use strict";
+
+/*  Top level ysend driver                                       */
+/*  Cheaply copied from npm with some of the keywords replaced */
+
+;(function () {
+  // windows: running "ysend blah" in this folder will invoke WSH, not node.
+  /*global WScript*/
+  if (typeof WScript !== 'undefined') {
+    WScript.echo(
+      'ms does not work when run\n' +
+        'with the Windows Scripting Host\n\n' +
+        "'cd' to a different directory,\n" +
+        "or type 'ms.cmd <args>',\n" +
+        "or type 'node ms <args>'."
+    );
+    WScript.quit(1);
+    return;
+  }
+
+  process.title = 'cb_proxy';
+
+  let program = require('commander');
+
+  function collect(val,addr) { addr.push(val); return addr; }
+
+  program
+    .usage('[options] <product>')
+    .parse(process.argv);
+
+  const ms = require('../dist/main.js');
+
+  ms.default(program);
+})();
+
