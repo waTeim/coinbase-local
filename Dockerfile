@@ -14,5 +14,5 @@ RUN tsc
 RUN cg
 RUN mkdir bin
 RUN dos2unix -n src/bin/cb_proxy bin/cb_proxy
-EXPOSE 63100
+EXPOSE 63200
 CMD bash entrypoint.sh
