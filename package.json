@@ -1,6 +1,6 @@
 {
   "name": "cb_local",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "CB Replication with some features",
   "main": "index.js",
   "repository":"git@github.com:waTeim/cb_local.git",

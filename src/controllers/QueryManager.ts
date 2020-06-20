@@ -133,8 +133,8 @@ export default class QueryManager extends ControllerBase
     let askArray:any[][] = [];
     let bidArray:any[][] = [];
 
-    for(let i = 0;i < asks.length;i++) askArray.push([asks[i].price,asks[i].size,asks[i].numOrders]);
-    for(let i = 0;i < bids.length;i++) bidArray.push([bids[i].price,bids[i].size,bids[i].numOrders]);
+    for(let i = 0;i < asks.length;i++) askArray.push([asks[i].price.toString(),asks[i].size.toString(),asks[i].numOrders]);
+    for(let i = 0;i < bids.length;i++) bidArray.push([bids[i].price.toString(),bids[i].size.toString(),bids[i].numOrders]);
 
     return { aggregation:aggregation, depth:depth, date:now, midpoint:midpointPrice.toString(), sequence:sequence, asks:askArray, bids:bidArray };
   }
