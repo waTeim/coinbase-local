@@ -53,11 +53,64 @@ export default class QueryManager extends ControllerBase
     let maxBid = state.bids[0].price;
     let agg = BigNumber(aggregation);
     const midpointPrice = minAsk.plus(maxBid).dividedBy(2);
-    const anchor = midpointPrice.dividedBy(agg).decimalPlaces(0,BigNumber.ROUND_DOWN);
-    let discriminators:any = [[],[]];
     let sequence = QueryManager.book.sequence(product);
 
-    console.log(`midpoint = ${midpointPrice.toNumber()} anchor = ${anchor.toNumber()}`);
+    if(aggregation == 0)
+    {
+      let askArray:any[][] = [];
+      let bidArray:any[][] = [];
+      let bidSize = BigNumber(0);
+      let bidPrice;
+      let bidOrders;
+      let askSize = BigNumber(0);
+      let askPrice;
+      let askOrders;
+
+      //console.log(`midpoint = ${midpointPrice.toNumber()}`);
+
+      for(let index = 0;asks.length < depth;index++)
+      {
+        if(index == 0 || state.asks[index].price.gt(state.asks[index - 1].price))
+        {
+          if(index != 0) asks.push({ price:askPrice, size:askSize, numOrders:askOrders });
+          askPrice = BigNumber(state.asks[index].price);
+          askSize = BigNumber(state.asks[index].size);
+          askOrders = 1;
+        }
+        else
+        {
+          askSize = askSize.plus(state.asks[index].size);
+          askOrders++;
+        }
+      }
+
+      for(let index = 0;bids.length < depth;index++)
+      {
+        if(index == 0 || state.bids[index].price.lt(state.bids[index - 1].price))
+        {
+          if(index != 0) bids.push({ price:bidPrice, size:bidSize, numOrders:bidOrders });
+          bidPrice = BigNumber(state.bids[index].price);
+          bidSize = BigNumber(state.bids[index].size);
+          bidOrders = 1;
+        }
+        else
+        {
+          bidSize = bidSize.plus(state.bids[index].size);
+          bidOrders++;
+        }
+      }
+
+      for(let i = 0;i < depth;i++) askArray.push([asks[i].price.toString(),asks[i].size.toString(),asks[i].numOrders]);
+      for(let i = 0;i < depth;i++) bidArray.push([bids[i].price.toString(),bids[i].size.toString(),bids[i].numOrders]);
+
+      return { aggregation:aggregation, depth:depth, date:now, midpoint:midpointPrice.toString(), sequence:sequence, asks:askArray, bids:bidArray }
+    }
+
+    const anchor = midpointPrice.dividedBy(agg).decimalPlaces(0,BigNumber.ROUND_DOWN);
+    let discriminators:any = [[],[]];
+
+    //console.log(`midpoint = ${midpointPrice.toNumber()} anchor = ${anchor.toNumber()}`);
+
     for(let i = 0;i < depth;i++) 
     {
       discriminators[0].push(anchor.minus(i).multipliedBy(agg));
