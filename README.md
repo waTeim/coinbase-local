@@ -7,7 +7,7 @@ on the level 3 feed, this provides that.
 
 ## To build 
 
-    docker build -t cb_local .
+    docker build -t coinbase-local .
 
 ## To Run
 
@@ -17,7 +17,7 @@ the `$PRODUCTS` env variable to provide that.  Internally, the server binds to p
 
 For example
 
-    docker run --rm -d -p 6300:63200 --name cb_local --env PRODUCTS=BTC-USD:ETH-USD cb_local
+    docker run --rm -d -p 6300:63200 --name cb_local --env PRODUCTS=BTC-USD:ETH-USD coinbase-local
 
 Given the above, once running swaggar docs are available [locally](http://localhost:6300/api/docs).
 
