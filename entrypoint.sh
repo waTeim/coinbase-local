@@ -5,7 +5,7 @@
 END=100
 
 # Start the main app so that the REST service will be available
-./bin/cb_proxy `echo $PRODUCTS|sed "s/:/ /g"`
+./bin/coinbase-endpoint `echo $PRODUCTS|sed "s/:/ /g"`
 
 while [ 1 ]
 do

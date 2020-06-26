@@ -22,6 +22,7 @@ FROM node:11
 RUN npm install \
     && npm install -g typescript \
     && npm install -g ts-api
+RUN npm run install-bin
 RUN mkdir -p dist \
     && mkdir -p docs
 EXPOSE 63200

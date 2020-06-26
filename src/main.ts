@@ -17,6 +17,7 @@ export default async function main(program:any)
 {
   let products:string[] = program.args;
 
+  if(products.length == 0 && process.env.PRODUCTS != null && process.env.PRODUCTS.length != 0) products = process.env.PRODUCTS.split(':');
   if(products.length > 0) await initServer(products);
   else program.help();
 }

@@ -19,7 +19,7 @@
     return;
   }
 
-  process.title = 'cb_proxy';
+  process.title = 'coinbase-endpoint';
 
   let program = require('commander');
 

@@ -12,10 +12,10 @@ export class Orderbook
   {
     this.active = false;
     let orderbookHandle = new CoinbasePro.OrderbookSync(this.products);
+    let syncCount = 0;
 
     let p = new Promise((accept:Function,reject:Function) => {
       orderbookHandle.on('synced',(product:string) => { 
-        this.active = true;
         orderbookHandle.on('error',(err:string) => {
           if(this.active)
           {
@@ -24,7 +24,11 @@ export class Orderbook
             this.init();
           }
         });
-        accept();
+        if(++syncCount == this.products.length)
+        {
+          this.active = true;
+          accept();
+        }
       });
       orderbookHandle.on('error',(err:string) => { 
         reject(err);

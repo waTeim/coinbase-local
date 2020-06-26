@@ -1,11 +1,14 @@
 {
   "name": "coinbase-local",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "CB Replication with some features",
   "main": "index.js",
   "repository": "git@github.com:waTeim/coinbase-local.git",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "mk-bin": "node scripts/mkbin",
+    "cp-bin": "node scripts/copybin",
+    "convert-bin": "node scripts/convert",
+    "install-bin": "npm run mk-bin && npm run cp-bin"
   },
   "author": "",
   "license": "ISC",
@@ -16,8 +19,11 @@
     "body-parser": "^1.19.0",
     "coinbase-pro": "waTeim/coinbase-pro-node#semver:^0.9.2",
     "commander": "^2.20.0",
+    "copyfiles": "^2.3.0",
     "cors": "^2.8.5",
+    "dos2unix": "^1.1.2",
     "exponential-backoff": "^3.0.0",
+    "mkdirp": "^1.0.4",
     "moment": "^2.24.0"
   },
   "devDependencies": {
