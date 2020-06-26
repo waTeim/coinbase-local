@@ -3,7 +3,7 @@ var D2UConverter = new require('dos2unix').dos2unix;
 // Setup default options
 var defaultOptions = {
   glob: {
-    cwd: __dirname
+    cwd: process.cwd()
   },
   maxConcurrency: 50
 };
@@ -18,4 +18,4 @@ var d2u = new D2UConverter(defaultOptions)
 
 // Convert line endings of a single non-binary, non-irregular file from
 // '\r\n' to '\n'.
-d2u.process(['bin/*']);
+d2u.process(['bin/coinbase-endpoint']);
