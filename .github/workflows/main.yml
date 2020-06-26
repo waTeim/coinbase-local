@@ -3,8 +3,8 @@ name: BUILD
 
 on:
   push:
-    tags:      
-      - v*
+    tags:
+    - '*'
 jobs:
   login:
     runs-on: ubuntu-latest
