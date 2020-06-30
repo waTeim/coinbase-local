@@ -1,6 +1,6 @@
 {
   "name": "coinbase-local",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "CB Replication with some features",
   "main": "index.js",
   "repository": "git@github.com:waTeim/coinbase-local.git",

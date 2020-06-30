@@ -48,6 +48,7 @@ export default class QueryManager extends ControllerBase
     let asks:OrderbookEntry[] = [];
     let bids:OrderbookEntry[] = [];
     let now = new Date();
+    let zero = BigNumber(0);
     let state = QueryManager.book.state(product);
     let minAsk = state.asks[0].price;
     let maxBid = state.bids[0].price;
@@ -106,15 +107,16 @@ export default class QueryManager extends ControllerBase
       return { aggregation:aggregation, depth:depth, date:now, midpoint:midpointPrice.toString(), sequence:sequence, asks:askArray, bids:bidArray }
     }
 
-    const anchor = midpointPrice.dividedBy(agg).decimalPlaces(0,BigNumber.ROUND_DOWN);
+    const askAnchor = minAsk.dividedBy(agg).decimalPlaces(0,BigNumber.ROUND_UP);
+    const bidAnchor = maxBid.dividedBy(agg).decimalPlaces(0,BigNumber.ROUND_DOWN);
     let discriminators:any = [[],[]];
 
-    //console.log(`midpoint = ${midpointPrice.toNumber()} anchor = ${anchor.toNumber()}`);
+    //console.log(`midpoint = ${midpointPrice.toNumber()} bid anchor = ${bidAnchor.toNumber()} ask anchor = ${askAnchor.toNumber()}`);
 
     for(let i = 0;i < depth;i++) 
     {
-      discriminators[0].push(anchor.minus(i).multipliedBy(agg));
-      discriminators[1].push(anchor.plus(i + 1).multipliedBy(agg));
+      discriminators[0].push(bidAnchor.minus(i).multipliedBy(agg));
+      discriminators[1].push(askAnchor.plus(i).multipliedBy(agg));
     }
 
     let sizeSum = BigNumber(0);
@@ -135,13 +137,15 @@ export default class QueryManager extends ControllerBase
 
       if(price.lt(discriminators[0][currentBucket]))
       {
-        let bucketPrice = priceSum.dividedBy(sizeSum);
-
-         bids.push({ price:bucketPrice.toNumber(), size:sizeSum.toNumber(), numOrders:numOrders });
-         sizeSum = BigNumber(0);
-         priceSum = BigNumber(0);
-         numOrders = 0;
-         currentBucket++;
+        let bucketPrice;
+        
+        if(priceSum.gt(zero)) bucketPrice = priceSum.dividedBy(sizeSum);
+        else bucketPrice = discriminators[0][currentBucket].plus(discriminators[0][currentBucket - 1]).dividedBy(2);
+        bids.push({ price:bucketPrice.toNumber(), size:sizeSum.toNumber(), numOrders:numOrders });
+        sizeSum = BigNumber(0);
+        priceSum = BigNumber(0);
+        numOrders = 0;
+        currentBucket++;
       }
       sizeSum = sizeSum.plus(size);
       priceSum = priceSum.plus(price.multipliedBy(size));
@@ -169,13 +173,15 @@ export default class QueryManager extends ControllerBase
 
       if(price.gt(discriminators[1][currentBucket]))
       {
-        let bucketPrice = priceSum.dividedBy(sizeSum);
+        let bucketPrice;
 
-         asks.push({ price:bucketPrice.toNumber(), size:sizeSum.toNumber(), numOrders:numOrders });
-         sizeSum = BigNumber(0);
-         priceSum = BigNumber(0);
-         numOrders = 0;
-         currentBucket++;
+        if(priceSum.gt(zero)) bucketPrice = priceSum.dividedBy(sizeSum);
+        else bucketPrice = discriminators[1][currentBucket].plus(discriminators[1][currentBucket - 1]).dividedBy(2);
+        asks.push({ price:bucketPrice.toNumber(), size:sizeSum.toNumber(), numOrders:numOrders });
+        sizeSum = BigNumber(0);
+        priceSum = BigNumber(0);
+        numOrders = 0;
+        currentBucket++;
       }
       sizeSum = sizeSum.plus(size);
       priceSum = priceSum.plus(price.multipliedBy(size));
