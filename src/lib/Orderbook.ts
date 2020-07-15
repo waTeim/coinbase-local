@@ -24,6 +24,14 @@ export class Orderbook
             this.init();
           }
         });
+        orderbookHandle.on('close',(err:string) => {
+          if(this.active)
+          {
+            console.log("socket close ... resetting connection...");
+            this.active = false;
+            this.init();
+          }
+        });
         if(++syncCount == this.products.length)
         {
           this.active = true;
@@ -31,6 +39,7 @@ export class Orderbook
         }
       });
       orderbookHandle.on('error',(err:string) => { 
+        console.log("orderbook handle error",err);
         reject(err);
       });
     });

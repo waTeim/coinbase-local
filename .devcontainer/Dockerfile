@@ -19,11 +19,5 @@ FROM node:11
 #    && rm -rf /var/lib/apt/lists/*
 # ENV DEBIAN_FRONTEND=dialog
 
-RUN npm install \
-    && npm install -g typescript \
-    && npm install -g ts-api
-RUN npm run install-bin
-RUN mkdir -p dist \
-    && mkdir -p docs
+RUN npm install -g typescript && npm install -g ts-api
 EXPOSE 63200
-CMD bash entrypoint.sh
