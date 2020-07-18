@@ -256,6 +256,7 @@ export default class QueryManager extends ControllerBase
           sellSizeSum = sellSizeSum.plus(size);
         }
       }
+      if(sequence == null) sequence = QueryManager.book.sequence(product);
       if(buySizeSum.gt(BigNumber(0))) buy = buyPriceSum.dividedBy(buySizeSum);
       if(sellSizeSum.gt(BigNumber(0))) sell = sellPriceSum.dividedBy(sellSizeSum);
 
