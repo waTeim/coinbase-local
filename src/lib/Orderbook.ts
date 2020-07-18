@@ -71,6 +71,7 @@ export class Orderbook
     }
   }
 
+  circularBufferArray(product:string) { return this.orderbookHandle._circular_buffers[product].toarray() }
   state(product:string) { return this.orderbookHandle.books[product].state(); }
   sequence(product:string) { return this.orderbookHandle._sequences[product]; }
 }

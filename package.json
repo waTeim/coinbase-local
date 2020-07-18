@@ -1,6 +1,6 @@
 {
   "name": "coinbase-local",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "CB Replication with some features",
   "main": "index.js",
   "repository": "git@github.com:waTeim/coinbase-local.git",
@@ -16,7 +16,7 @@
     "@types/node": "^12.0.10",
     "bignumber.js": "^9.0.0",
     "body-parser": "^1.19.0",
-    "coinbase-pro": "waTeim/coinbase-pro-node#semver:^0.9.3",
+    "coinbase-pro": "waTeim/coinbase-pro-node#semver:^0.10.0",
     "commander": "^2.20.0",
     "copyfiles": "^2.3.0",
     "cors": "^2.8.5",

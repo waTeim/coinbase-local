@@ -1,6 +1,7 @@
 
 import { ControllerBase, ControllerProperties, get, post, controller, Res } from 'ts-api';
 import { Orderbook } from '../lib/Orderbook';
+import { start } from 'repl';
 
 const BigNumber = require('bignumber.js');
 
@@ -21,6 +22,19 @@ interface OrderbookInterval
   midpoint:string;
   asks:any[][];
   bids:any[][];
+};
+
+interface MarketOrder
+{
+  price:number;
+  size:number;
+};
+
+interface MarketOrderInterval
+{
+  sequence:number;
+  buy:MarketOrder;
+  sell:MarketOrder;
 };
 
 /**
@@ -196,5 +210,56 @@ export default class QueryManager extends ControllerBase
     for(let i = 0;i < bids.length;i++) bidArray.push([bids[i].price.toString(),bids[i].size.toString(),bids[i].numOrders]);
 
     return { aggregation:aggregation, depth:depth, date:now, midpoint:midpointPrice.toString(), sequence:sequence, asks:askArray, bids:bidArray };
+  }
+
+  @get('/marketOrders')  async getMarketOrderInterval(product:string,since?:number):Promise<MarketOrderInterval>
+  {
+    if(QueryManager.book == null) 
+    {
+      QueryManager.book = new Orderbook(this.properties.context.products);
+      await QueryManager.book.init();
+      console.log("book is synced");
+    }
+
+    let orders = QueryManager.book.circularBufferArray(product);
+
+    if(since == null) 
+    {
+      let sequence = QueryManager.book.sequence(product);
+
+      return { sequence:sequence, buy:{ price:0, size:0 }, sell:{ price:0, size:0 }};
+    }
+    else
+    {
+      let buyPriceSum = BigNumber(0);
+      let sellPriceSum = BigNumber(0);
+      let buySizeSum = BigNumber(0);
+      let sellSizeSum = BigNumber(0);
+      let buy = BigNumber(0);
+      let sell = BigNumber(0);
+      let sequence;
+
+      for(let i = 0;i < orders.length && orders[i].sequence > since;i++)
+      {
+        let size = BigNumber(orders[i].size);
+        let price = BigNumber(orders[i].price);
+
+        if(sequence == null) sequence = orders[i].sequence;
+        if(orders[i].side == "buy")
+        {
+          buyPriceSum = buyPriceSum.plus(price.multipliedBy(size));
+          buySizeSum = buySizeSum.plus(size);
+        }
+        if(orders[i].side == "sell")
+        {
+          sellPriceSum = sellPriceSum.plus(price.multipliedBy(size));
+          sellSizeSum = sellSizeSum.plus(size);
+        }
+      }
+      if(buySizeSum.gt(BigNumber(0))) buy = buyPriceSum.dividedBy(buySizeSum);
+      if(sellSizeSum.gt(BigNumber(0))) sell = sellPriceSum.dividedBy(sellSizeSum);
+
+      return { sequence:sequence, buy:{ price:buy.toNumber(), size:buySizeSum.toNumber() }, sell:{ price:sell.toNumber(), size:sellSizeSum.toNumber() }};
+    }
   }
 }
