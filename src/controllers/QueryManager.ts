@@ -28,6 +28,7 @@ interface MarketOrder
 {
   price:number;
   size:number;
+  numOrders:number;
 };
 
 interface MarketOrderInterval
@@ -227,14 +228,16 @@ export default class QueryManager extends ControllerBase
     {
       let sequence = QueryManager.book.sequence(product);
 
-      return { sequence:sequence, buy:{ price:0, size:0 }, sell:{ price:0, size:0 }};
+      return { sequence:sequence, buy:{ price:0, size:0, numOrders:0 }, sell:{ price:0, size:0, numOrders:0 }};
     }
     else
     {
       let buyPriceSum = BigNumber(0);
-      let sellPriceSum = BigNumber(0);
       let buySizeSum = BigNumber(0);
+      let buyNumOrders = 0;
+      let sellPriceSum = BigNumber(0);
       let sellSizeSum = BigNumber(0);
+      let sellNumOrders = 0;
       let buy = BigNumber(0);
       let sell = BigNumber(0);
       let sequence;
@@ -249,18 +252,24 @@ export default class QueryManager extends ControllerBase
         {
           buyPriceSum = buyPriceSum.plus(price.multipliedBy(size));
           buySizeSum = buySizeSum.plus(size);
+          buyNumOrders += 1;
         }
         if(orders[i].side == "sell")
         {
           sellPriceSum = sellPriceSum.plus(price.multipliedBy(size));
           sellSizeSum = sellSizeSum.plus(size);
+          sellNumOrders += 1;
         }
       }
       if(sequence == null) sequence = QueryManager.book.sequence(product);
       if(buySizeSum.gt(BigNumber(0))) buy = buyPriceSum.dividedBy(buySizeSum);
       if(sellSizeSum.gt(BigNumber(0))) sell = sellPriceSum.dividedBy(sellSizeSum);
 
-      return { sequence:sequence, buy:{ price:buy.toNumber(), size:buySizeSum.toNumber() }, sell:{ price:sell.toNumber(), size:sellSizeSum.toNumber() }};
+      return { 
+        sequence:sequence, 
+        buy:{ price:buy.toNumber(), size:buySizeSum.toNumber(), numOrders:buyNumOrders }, 
+        sell:{ price:sell.toNumber(), size:sellSizeSum.toNumber(), numOrders:sellNumOrders },
+       };
     }
   }
 }
