@@ -1,23 +1,15 @@
-#-------------------------------------------------------------------------------------------------------------
-# Copyright (c) Microsoft Corporation. All rights reserved.
-# Licensed under the MIT License. See https://go.microsoft.com/fwlink/?linkid=2090316 for license information.
-#-------------------------------------------------------------------------------------------------------------
+# .devcontainer/Dockerfile
+FROM golang:1.24-bookworm
 
-# To fully customize the contents of this image, use the following Dockerfile instead:
-# https://github.com/microsoft/vscode-dev-containers/tree/v0.112.0/containers/javascript-node-12/.devcontainer/Dockerfile
-FROM node:11
+# Python 3.11 is default on Bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends  python3 python3-venv python3-pip git ca-certificates curl python-is-python3 vim && rm -rf /var/lib/apt/lists/*
 
-# ** [Optional] Uncomment this section to install additional packages. **
-#
-# ENV DEBIAN_FRONTEND=noninteractive
-# RUN apt-get update \
-#    && apt-get -y install --no-install-recommends <your-package-list-here> \
-#    #
-#    # Clean up
-#    && apt-get autoremove -y \
-#    && apt-get clean -y \
-#    && rm -rf /var/lib/apt/lists/*
-# ENV DEBIAN_FRONTEND=dialog
+# Create non-root user like the devcontainers images
+ARG USER=vscode UID=1000 GID=1000
+RUN groupadd -g ${GID} ${USER} \
+ && useradd -s /bin/bash -m -u ${UID} -g ${GID} ${USER}
+USER ${USER}
+ENV HOME=/home/${USER} PATH=/home/${USER}/.local/bin:$PATH
 
-RUN npm install -g typescript && npm install -g ts-api
-EXPOSE 63200
+# Optional: preinstall uv to speed up first use
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
