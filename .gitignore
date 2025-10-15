@@ -33,3 +33,5 @@ Thumbs.db
 /.gradle/
 /build/
 /bin/
+.devcontainer/codex
+.devcontainer/local.env

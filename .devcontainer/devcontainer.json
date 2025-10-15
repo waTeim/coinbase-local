@@ -1,25 +1,37 @@
 {
-  "name": "Go + Python (custom)",
+  "name": "Go + Python (custom) + MCP/Codex",
   "dockerFile": "Dockerfile",
-  "runArgs": ["--net=cb_local", "--net-alias=cache", "-p", "63200:63200"],
   "remoteUser": "vscode",
 
-  "mounts": [
-    "source=${localWorkspaceFolder}/.vscode/codex,target=/home/vscode/.codex,type=bind,consistency=cached"
+  // Use your existing net/port AND load container-wide envs from a host file
+  "runArgs": [
+    "--net=cb_local",
+    "--net-alias=cache",
+    "-p", "63200:63200",
+    "--env-file", "${localWorkspaceFolder}/.devcontainer/local.env"
   ],
 
+  // Mount a host directory OUTSIDE the repo so Codex can read/write its config
+  // (keeps it persistent and out of git). Inside the container we use ~/.codex.
+  "mounts": [
+    "source=${localWorkspaceFolder}/.devcontainer/codex,target=/home/vscode/.codex,type=bind,consistency=cached"
+  ],
+
+  // Optional: advertise the path explicitly for tools/tasks
   "containerEnv": {
-    "CONTEXT7_API_KEY": "${localEnv:CONTEXT7_API_KEY}"
+    "CODEX_CONFIG": "/home/vscode/.codex/config.toml"
   },
 
-  "postCreateCommand": "bash -lc 'go install golang.org/x/tools/gopls@latest && (~/.local/bin/uv --version || (curl -LsSf https://astral.sh/uv/install.sh | sh)) && ~/.local/bin/uv tool install ruff && ~/.local/bin/uv tool install black && mkdir -p ~/.codex && touch ~/.codex/config.toml'",
+  // Create host-side files/dirs if missing (runs on the HOST before container start)
+  "initializeCommand": "bash -lc 'mkdir -p .devcontainer/codex; touch .devcontainer/codex/config.toml .devcontainer/local.env || true'",
 
   "customizations": {
     "vscode": {
       "extensions": [
         "golang.go",
         "ms-python.python",
-        "ms-python.vscode-pylance"
+        "ms-python.vscode-pylance",
+        "openai.chatgpt"
       ]
     }
   }
