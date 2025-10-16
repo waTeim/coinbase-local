@@ -36,19 +36,43 @@ def _resolve_credentials(
             key_file = Path(file_env)
 
     if key_file:
-        data = json.loads(key_file.read_text())
-        candidate_key = (
-            data.get("id")
-            or data.get("key")
-            or data.get("keyName")
-            or data.get("name")
-            or data.get("keyId")
-        )
+        raw_key_payload = key_file.read_text().strip()
+        try:
+            data = json.loads(raw_key_payload)
+        except json.JSONDecodeError:
+            candidate_key = raw_key_payload
+        else:
+            candidate_key = (
+                data.get("id")
+                or data.get("key")
+                or data.get("keyName")
+                or data.get("name")
+                or data.get("keyId")
+                or candidate_key
+            )
+            candidate_secret = data.get("privateKey") or data.get("secret") or candidate_secret
+            candidate_passphrase = data.get("passphrase", candidate_passphrase)
 
-        candidate_secret = data.get("privateKey") or data.get("secret")
-        candidate_passphrase = data.get("passphrase", candidate_passphrase)
+    secret_file = None
+    if candidate_secret and Path(candidate_secret).is_file():
+        secret_file = Path(candidate_secret)
+    else:
+        secret_env = os.getenv("COINBASE_API_SECRET_FILE")
+        if secret_env and Path(secret_env).is_file():
+            secret_file = Path(secret_env)
+
+    if secret_file:
+        candidate_secret = secret_file.read_text().strip()
+
+    if candidate_secret and "\\n" in candidate_secret and "-----BEGIN" in candidate_secret:
+        candidate_secret = candidate_secret.replace("\\n", "\n")
+
+    if candidate_secret:
+        candidate_secret = candidate_secret.strip()
 
     return candidate_key, candidate_secret, candidate_passphrase
+
+
 
 
 @dataclass

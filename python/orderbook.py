@@ -1,26 +1,23 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import logging
-import time
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from decimal import Decimal, ROUND_DOWN, getcontext
+from decimal import Decimal, ROUND_DOWN, ROUND_UP, getcontext
+from multiprocessing import AuthenticationError
 from typing import Any, Deque, Dict, Iterable, List, Literal, Optional, Tuple
 
-import urllib.parse
-
-import httpx
-import websockets
-from websockets import WebSocketClientProtocol
-
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from coinbase.rest import RESTClient
+from coinbase.websocket import (
+    WSClient,
+    WSClientConnectionClosedException,
+    WSClientException,
+    WebsocketResponse,
+)
+from requests.exceptions import HTTPError
 
 from .config import AppConfig
 
@@ -60,13 +57,22 @@ class ProductOrderBook:
         self.lock = asyncio.Lock()
         self.ready = asyncio.Event()
 
-    def update_from_snapshot(self, bids: Iterable[PriceLevel], asks: Iterable[PriceLevel], sequence: int) -> None:
+    def update_from_snapshot(
+        self,
+        bids: Iterable[PriceLevel],
+        asks: Iterable[PriceLevel],
+        sequence: int,
+    ) -> None:
         self.bids = {level.price: level for level in bids if level.size > 0}
         self.asks = {level.price: level for level in asks if level.size > 0}
         self.sequence = sequence
         self.mark_ready()
 
-    def apply_update(self, changes: Iterable[Tuple[str, Decimal, Decimal, int]], sequence: int) -> None:
+    def apply_update(
+        self,
+        changes: Iterable[Tuple[str, Decimal, Decimal, int]],
+        sequence: int,
+    ) -> None:
         for side, price, size, num_orders in changes:
             book = self.bids if side == "buy" else self.asks
             if size == 0:
@@ -97,75 +103,116 @@ class CoinbaseOrderBookManager:
     def __init__(self, config: AppConfig) -> None:
         self._config = config
         self._books: Dict[str, ProductOrderBook] = {
-            product: ProductOrderBook(product, config.market_order_buffer) for product in config.products
+            product: ProductOrderBook(product, config.market_order_buffer)
+            for product in config.products
         }
-        self._client: Optional[httpx.AsyncClient] = None
+        self._rest_client = RESTClient(
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+        )
+        self._ws_client = WSClient(
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+            base_url=config.ws_url,
+            max_size=None,
+            on_message=self._on_ws_message,
+        )
         self._ws_task: Optional[asyncio.Task] = None
-        self._ws: Optional[WebSocketClientProtocol] = None
         self._running = asyncio.Event()
-        self._reconnect_lock = asyncio.Lock()
-        self._signing_key = self._load_signing_key()
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     async def start(self) -> None:
-        if self._client is None:
-            self._client = httpx.AsyncClient(timeout=self._config.http_timeout)
         await self._prime_snapshots()
+        self._loop = asyncio.get_running_loop()
         self._running.set()
         self._ws_task = asyncio.create_task(self._websocket_loop())
 
     async def stop(self) -> None:
         self._running.clear()
+        if self._ws_client.websocket:
+            try:
+                await self._ws_client.unsubscribe_all_async()
+            except WSClientException:
+                logger.debug("Websocket unsubscribe failed during shutdown", exc_info=True)
+            try:
+                await self._ws_client.close_async()
+            except WSClientException:
+                pass
         if self._ws_task:
             self._ws_task.cancel()
             try:
                 await self._ws_task
             except asyncio.CancelledError:
                 pass
-        if self._client:
-            await self._client.aclose()
-            self._client = None
+            self._ws_task = None
 
     async def _prime_snapshots(self) -> None:
         for product_id in self._config.products:
             try:
                 await self._load_snapshot(product_id)
-            except httpx.HTTPStatusError:
-                continue
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("Failed to load initial snapshot for %s: %s", product_id, exc)
 
     async def _load_snapshot(self, product_id: str) -> None:
-        if self._client is None:
-            raise RuntimeError("HTTP client not initialised")
-
-        path = f"/brokerage/products/{product_id}/book"
-        url = f"{self._config.rest_url}{path}"
-        params = {"limit": 500}
-        headers = self._auth_headers("GET", path, params=params)
-        logger.debug("Snapshot request headers for %s: %s", product_id, headers)
-
         try:
-            response = await self._client.get(url, params=params, headers=headers or None)
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            status = exc.response.status_code if exc.response else 'unknown'
-            body = exc.response.text if exc.response is not None else '<no body>'
+            response = await asyncio.to_thread(
+                self._rest_client.get_product_book,
+                product_id,
+                500,
+            )
+        except AuthenticationError:
+            logger.warning(
+                "API credentials unavailable for %s snapshot; falling back to public endpoint",
+                product_id,
+            )
+            response = await asyncio.to_thread(
+                self._rest_client.get_public_product_book,
+                product_id,
+                500,
+            )
+        except HTTPError as exc:
+            status = exc.response.status_code if exc.response else None
             if status == 401:
-                logger.warning('Snapshot fetch unauthorized for %s, relying on websocket snapshot. Body: %s', product_id, body)
-                return
-            logger.error('Failed to pull snapshot for %s (status %s): %s', product_id, status, body)
-            raise
-        except httpx.HTTPError as exc:
-            logger.error('HTTP error pulling snapshot for %s: %s', product_id, exc)
-            raise
+                logger.warning(
+                    "Snapshot unauthorized for %s; falling back to public endpoint", product_id
+                )
+                response = await asyncio.to_thread(
+                    self._rest_client.get_public_product_book,
+                    product_id,
+                    500,
+                )
+            else:
+                logger.error("Failed to pull snapshot for %s: %s", product_id, exc)
+                raise
 
-        payload = response.json()
-        bids = self._parse_price_levels(payload.get("bids", []))
-        asks = self._parse_price_levels(payload.get("asks", []))
-        sequence = int(payload.get("sequence", 0))
+        pricebook = getattr(response, "pricebook", None)
+        if pricebook is None:
+            raise ValueError(f"Snapshot payload missing pricebook for {product_id}")
+
+        bids: List[PriceLevel] = []
+        for entry in getattr(pricebook, "bids", []) or []:
+            price = self._safe_decimal(entry.price)
+            size = self._safe_decimal(entry.size)
+            if price is None or size is None:
+                continue
+            bids.append(PriceLevel(price=price, size=size, num_orders=1))
+        bids.sort(key=lambda level: level.price, reverse=True)
+
+        asks: List[PriceLevel] = []
+        for entry in getattr(pricebook, "asks", []) or []:
+            price = self._safe_decimal(entry.price)
+            size = self._safe_decimal(entry.size)
+            if price is None or size is None:
+                continue
+            asks.append(PriceLevel(price=price, size=size, num_orders=1))
+        asks.sort(key=lambda level: level.price)
 
         book = self._books[product_id]
         async with book.lock:
-            book.update_from_snapshot(bids=bids, asks=asks, sequence=sequence)
-        logger.info("Snapshot primed for %s at sequence %s", product_id, sequence)
+            book.update_from_snapshot(bids=bids, asks=asks, sequence=0)
+        logger.info(
+            "Snapshot primed for %s with %d bids / %d asks", product_id, len(bids), len(asks)
+        )
 
     async def get_interval(self, product_id: str, aggregation: int, depth: int) -> Dict[str, Any]:
         book = self._get_book(product_id)
@@ -181,8 +228,14 @@ class CoinbaseOrderBookManager:
             sequence = book.sequence
 
             if aggregation == 0:
-                ask_levels = [[_dec_to_str(level.price), _dec_to_str(level.size), level.num_orders] for level in asks[:depth]]
-                bid_levels = [[_dec_to_str(level.price), _dec_to_str(level.size), level.num_orders] for level in bids[:depth]]
+                ask_levels = [
+                    [_dec_to_str(level.price), _dec_to_str(level.size), level.num_orders]
+                    for level in asks[:depth]
+                ]
+                bid_levels = [
+                    [_dec_to_str(level.price), _dec_to_str(level.size), level.num_orders]
+                    for level in bids[:depth]
+                ]
             else:
                 agg = Decimal(aggregation)
                 ask_levels = self._aggregate_side(asks, agg, depth, side="ask")
@@ -249,6 +302,152 @@ class CoinbaseOrderBookManager:
                 },
             }
 
+    async def _websocket_loop(self) -> None:
+        backoff = 1
+        while self._running.is_set():
+            try:
+                await self._ws_client.open_async()
+                await self._ws_client.level2_async(self._config.products)
+                await self._ws_client.market_trades_async(self._config.products)
+
+                while self._running.is_set() and self._ws_client.websocket:
+                    await asyncio.sleep(1)
+                    self._ws_client.raise_background_exception()
+            except WSClientConnectionClosedException as exc:
+                logger.warning("Websocket connection closed: %s", exc)
+            except WSClientException as exc:
+                logger.warning("Websocket error: %s", exc)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.exception("Unexpected websocket exception: %s", exc)
+            finally:
+                if self._ws_client.websocket:
+                    try:
+                        await self._ws_client.close_async()
+                    except WSClientException:
+                        pass
+
+            if self._running.is_set():
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 60)
+
+    def _on_ws_message(self, message: str) -> None:
+        if not self._loop:
+            return
+        try:
+            payload = json.loads(message)
+        except json.JSONDecodeError:
+            logger.debug("Discarding malformed websocket payload", exc_info=True)
+            return
+        self._loop.call_soon_threadsafe(self._enqueue_ws_payload, payload)
+
+    def _enqueue_ws_payload(self, payload: Dict[str, Any]) -> None:
+        asyncio.create_task(self._process_ws_payload(payload))
+
+    async def _process_ws_payload(self, payload: Dict[str, Any]) -> None:
+        response = WebsocketResponse(payload)
+        channel = response.channel
+
+        if channel == "l2_data":
+            for event in response.events or []:
+                await self._handle_level2_event(response, event)
+        elif channel == "market_trades":
+            for event in response.events or []:
+                await self._handle_market_trades_event(response, event)
+
+    async def _handle_level2_event(self, response: WebsocketResponse, event: Any) -> None:
+        product_id = getattr(event, "product_id", None)
+        if not product_id or product_id not in self._books:
+            return
+
+        updates = getattr(event, "updates", None) or []
+        sequence = response.sequence_num
+        book = self._books[product_id]
+
+        if getattr(event, "type", None) == "snapshot":
+            bids: List[PriceLevel] = []
+            asks: List[PriceLevel] = []
+            for update in updates:
+                price = self._safe_decimal(getattr(update, "price_level", None))
+                size = self._safe_decimal(getattr(update, "new_quantity", None))
+                if price is None or size is None or size <= 0:
+                    continue
+                side = (getattr(update, "side", "") or "").lower()
+                level = PriceLevel(price=price, size=size, num_orders=1)
+                if side.startswith("bid"):
+                    bids.append(level)
+                else:
+                    asks.append(level)
+            bids.sort(key=lambda level: level.price, reverse=True)
+            asks.sort(key=lambda level: level.price)
+            async with book.lock:
+                book.update_from_snapshot(bids, asks, sequence)
+            return
+
+        changes: List[Tuple[str, Decimal, Decimal, int]] = []
+        for update in updates:
+            price = self._safe_decimal(getattr(update, "price_level", None))
+            size = self._safe_decimal(getattr(update, "new_quantity", None))
+            if price is None or size is None:
+                continue
+            side = (getattr(update, "side", "") or "").lower()
+            changes.append(("buy" if side.startswith("bid") else "sell", price, size, 1))
+
+        if changes:
+            async with book.lock:
+                book.apply_update(changes, sequence)
+
+    async def _handle_market_trades_event(
+        self,
+        response: WebsocketResponse,
+        event: Any,
+    ) -> None:
+        trades = getattr(event, "trades", None) or []
+        sequence = response.sequence_num
+
+        for trade in trades:
+            product_id = getattr(trade, "product_id", None) or getattr(event, "product_id", None)
+            if not product_id or product_id not in self._books:
+                continue
+
+            price = self._safe_decimal(getattr(trade, "price", None))
+            size = self._safe_decimal(getattr(trade, "size", None))
+            if price is None or size is None:
+                continue
+
+            side_raw = (getattr(trade, "side", "") or "").lower()
+            side = "buy" if side_raw.startswith("b") else "sell"
+            timestamp = self._parse_timestamp(getattr(trade, "time", None))
+
+            entry = TradeEntry(
+                sequence=sequence,
+                side=side,
+                price=price,
+                size=size,
+                timestamp=timestamp,
+            )
+
+            book = self._books[product_id]
+            async with book.lock:
+                book.record_trade(entry)
+
+    def _safe_decimal(self, value: Optional[Any]) -> Optional[Decimal]:
+        if value is None:
+            return None
+        try:
+            return Decimal(str(value))
+        except (ArithmeticError, ValueError):
+            return None
+
+    def _parse_timestamp(self, value: Optional[Any]) -> datetime:
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(float(value), tz=timezone.utc)
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+        return datetime.now(timezone.utc)
+
     def _get_book(self, product_id: str) -> ProductOrderBook:
         try:
             return self._books[product_id]
@@ -276,9 +475,9 @@ class CoinbaseOrderBookManager:
 
         bucket_totals: Dict[int, Tuple[Decimal, Decimal, int]] = {}
         if side == "ask":
-            base_index = int((levels[0].price / aggregation).to_integral_value(rounding=ROUND_DOWN))
+            base_index = int((levels[0].price / aggregation).to_integral_value(rounding=ROUND_UP))
             for level in levels:
-                bucket_index = int((level.price / aggregation).to_integral_value(rounding=ROUND_DOWN))
+                bucket_index = int((level.price / aggregation).to_integral_value(rounding=ROUND_UP))
                 relative = bucket_index - base_index
                 if relative < 0:
                     continue
@@ -318,224 +517,6 @@ class CoinbaseOrderBookManager:
                 order_sum,
             ])
         return results[:depth]
-
-    def _parse_price_levels(self, raw_levels: Iterable[Any]) -> List[PriceLevel]:
-        levels: List[PriceLevel] = []
-        for raw in raw_levels:
-            if isinstance(raw, dict):
-                price = Decimal(str(raw.get("price")))
-                size = Decimal(str(raw.get("size", "0")))
-                num_orders = int(raw.get("num_orders", raw.get("numOrders", raw.get("count", 1))))
-            else:
-                price = Decimal(str(raw[0]))
-                size = Decimal(str(raw[1]))
-                num_orders = int(raw[2]) if len(raw) > 2 else 1
-            levels.append(PriceLevel(price=price, size=size, num_orders=num_orders))
-        return levels
-
-    def _parse_changes(self, raw_changes: Iterable[Any]) -> List[Tuple[str, Decimal, Decimal, int]]:
-        changes: List[Tuple[str, Decimal, Decimal, int]] = []
-        for change in raw_changes:
-            if isinstance(change, dict):
-                side = (change.get("side") or change.get("type", "buy")).lower()
-                price = Decimal(str(change.get("price")))
-                size = Decimal(str(change.get("size", change.get("remaining", "0"))))
-                num_orders = int(change.get("num_orders", change.get("count", 1)))
-            else:
-                side = str(change[0]).lower()
-                price = Decimal(str(change[1]))
-                size = Decimal(str(change[2]))
-                num_orders = int(change[3]) if len(change) > 3 else 1
-            normalised_side = "buy" if side.startswith("b") else "sell"
-            changes.append((normalised_side, price, size, num_orders))
-        return changes
-
-    async def _websocket_loop(self) -> None:
-        backoff = 1
-        while self._running.is_set():
-            try:
-                await self._connect_and_stream()
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:  # pragma: no cover - runtime protection
-                logger.exception("Websocket loop error: %s", exc)
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 60)
-            else:
-                backoff = 1
-
-    async def _connect_and_stream(self) -> None:
-        payload = self._subscription_payload()
-        async with self._reconnect_lock:
-            logger.info("Connecting to Coinbase Advanced Trade websocket at %s", self._config.ws_url)
-            async with websockets.connect(self._config.ws_url, ping_interval=20, ping_timeout=20) as ws:
-                self._ws = ws
-                await ws.send(json.dumps(payload))
-                async for raw_message in ws:
-                    await self._handle_message(json.loads(raw_message))
-
-    async def _handle_message(self, message: Dict[str, Any]) -> None:
-        channel = message.get("channel") or message.get("type")
-        events = message.get("events")
-
-        if channel == "subscriptions":
-            logger.debug("Subscribed to channels: %s", events)
-            return
-
-        if isinstance(events, list):
-            for event in events:
-                await self._handle_event(event, channel)
-            return
-
-        await self._handle_event(message, channel)
-
-    async def _handle_event(self, event: Dict[str, Any], channel: Optional[str]) -> None:
-        event_type = event.get("type")
-        product_id = event.get("product_id") or event.get("productId")
-        if not product_id or product_id not in self._books:
-            return
-
-        if channel == "level2" or event_type in {"snapshot", "update"}:
-            await self._process_level2_event(product_id, event)
-        elif channel == "market_trades" or event_type == "trade" or event.get("trades"):
-            await self._process_trade_event(product_id, event)
-
-    async def _process_level2_event(self, product_id: str, event: Dict[str, Any]) -> None:
-        book = self._books[product_id]
-        sequence = int(event.get("sequence", book.sequence))
-
-        if event.get("type") == "snapshot":
-            bids = self._parse_price_levels(event.get("bids", []))
-            asks = self._parse_price_levels(event.get("asks", []))
-            async with book.lock:
-                book.update_from_snapshot(bids, asks, sequence)
-            return
-
-        changes = self._parse_changes(event.get("changes") or event.get("updates", []))
-        async with book.lock:
-            book.apply_update(changes, sequence)
-
-    async def _process_trade_event(self, product_id: str, event: Dict[str, Any]) -> None:
-        book = self._books[product_id]
-        trades = event.get("trades") or [event]
-        parsed: List[TradeEntry] = []
-
-        for trade in trades:
-            sequence = int(trade.get("sequence", book.sequence))
-            side = (trade.get("side") or trade.get("taker_side", "buy")).lower()
-            price = Decimal(str(trade.get("price")))
-            size = Decimal(str(trade.get("size", trade.get("quantity", "0"))))
-            timestamp_raw = trade.get("time") or trade.get("timestamp")
-            if isinstance(timestamp_raw, (int, float)):
-                timestamp = datetime.fromtimestamp(float(timestamp_raw), tz=timezone.utc)
-            elif isinstance(timestamp_raw, str):
-                timestamp = datetime.fromisoformat(timestamp_raw.replace("Z", "+00:00"))
-            else:
-                timestamp = datetime.now(timezone.utc)
-            parsed.append(
-                TradeEntry(
-                    sequence=sequence,
-                    side="buy" if side.startswith("b") else "sell",
-                    price=price,
-                    size=size,
-                    timestamp=timestamp,
-                )
-            )
-
-        async with book.lock:
-            for entry in parsed:
-                book.record_trade(entry)
-
-    def _subscription_payload(self) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {
-            "type": "subscribe",
-            "product_ids": self._config.products,
-            "channels": [
-                {"name": "level2", "product_ids": self._config.products},
-                {"name": "market_trades", "product_ids": self._config.products},
-            ],
-        }
-
-        if self._has_credentials:
-            timestamp = str(int(time.time()))
-            message = f"{timestamp}GET/users/self".encode()
-            signature = self._sign_message(message)
-            payload.update(
-                {
-                    "signature": signature,
-                    "key": self._config.api_key,
-                    "timestamp": timestamp,
-                }
-            )
-            if self._config.api_passphrase:
-                payload["passphrase"] = self._config.api_passphrase
-
-        return payload
-
-    def _load_signing_key(self) -> Optional[ec.EllipticCurvePrivateKey | Ed25519PrivateKey]:
-        secret = self._config.api_secret
-        if not secret:
-            return None
-        secret = secret.strip()
-
-        if secret.startswith("-----BEGIN"):
-            key = load_pem_private_key(secret.encode(), password=None)
-            if isinstance(key, (Ed25519PrivateKey, ec.EllipticCurvePrivateKey)):
-                return key
-            raise ValueError("Unsupported private key type in PEM payload")
-
-        try:
-            raw = base64.b64decode(secret)
-        except Exception as exc:
-            raise ValueError('Failed to base64 decode Coinbase private key') from exc
-        if len(raw) == 64:
-            raw = raw[:32]
-        if len(raw) != 32:
-            raise ValueError('Unexpected Coinbase private key length; expected 32 or 64 bytes')
-        return Ed25519PrivateKey.from_private_bytes(raw)
-
-    def _sign_message(self, message: bytes) -> str:
-        if self._signing_key is None:
-            raise RuntimeError('No signing key configured for Coinbase API access')
-        if isinstance(self._signing_key, Ed25519PrivateKey):
-            signature = self._signing_key.sign(message)
-        elif isinstance(self._signing_key, ec.EllipticCurvePrivateKey):
-            signature = self._signing_key.sign(message, ec.ECDSA(hashes.SHA256()))
-        else:
-            raise RuntimeError('Unsupported signing key type loaded for Coinbase API access')
-        return base64.b64encode(signature).decode()
-
-    @property
-    def _has_credentials(self) -> bool:
-        return bool(self._config.api_key and self._signing_key)
-
-    def _auth_headers(
-        self,
-        method: str,
-        path: str,
-        *,
-        body: str = "",
-        params: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, str]:
-        if not self._has_credentials:
-            return {}
-        timestamp = str(int(time.time()))
-        request_path = path if path.startswith('/api/') else f'/api/v3{path}'
-        if params:
-            query = urllib.parse.urlencode(params, doseq=True)
-            if query:
-                request_path = f'{request_path}?{query}'
-        message = f'{timestamp}{method.upper()}{request_path}{body}'.encode()
-        signature = self._sign_message(message)
-        headers = {
-            "CB-ACCESS-KEY": self._config.api_key or "",
-            "CB-ACCESS-SIGN": signature,
-            "CB-ACCESS-TIMESTAMP": timestamp,
-        }
-        if self._config.api_passphrase:
-            headers["CB-ACCESS-PASSPHRASE"] = self._config.api_passphrase
-        headers["Content-Type"] = "application/json"
-        return headers
 
 
 __all__ = ["CoinbaseOrderBookManager", "ProductOrderBook"]
