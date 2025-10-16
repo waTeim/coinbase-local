@@ -1,9 +1,15 @@
 {
-  "name": "Go + Python (custom) + MCP/Codex",
+  
+  "name": "Ubuntu + Go + Python + Node (MCP/Codex)",
   "dockerFile": "Dockerfile",
   "remoteUser": "vscode",
 
-  // Use your existing net/port AND load container-wide envs from a host file
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": { "version": "3.11" },
+    "ghcr.io/devcontainers/features/go:1":     { "version": "1.24" },
+    "ghcr.io/devcontainers/features/node:1":   { "version": "22" }
+  },
+
   "runArgs": [
     "--net=cb_local",
     "--net-alias=cache",
@@ -11,22 +17,28 @@
     "--env-file", "${localWorkspaceFolder}/.devcontainer/local.env"
   ],
 
+  "forwardPorts": [1455],
+  "portsAttributes": {
+    "1455": { "onAutoForward": "openBrowser", "protocol": "http", "localPort": 1455 }
+  },
+
   // Mount a host directory OUTSIDE the repo so Codex can read/write its config
   // (keeps it persistent and out of git). Inside the container we use ~/.codex.
   "mounts": [
     "source=${localWorkspaceFolder}/.devcontainer/codex,target=/home/vscode/.codex,type=bind,consistency=cached"
   ],
 
-  // Optional: advertise the path explicitly for tools/tasks
-  "containerEnv": {
-    "CODEX_CONFIG": "/home/vscode/.codex/config.toml"
-  },
+  "postCreateCommand": "bash -lc '.devcontainer/setup.sh'",
 
   // Create host-side files/dirs if missing (runs on the HOST before container start)
   "initializeCommand": "bash -lc 'mkdir -p .devcontainer/codex; touch .devcontainer/codex/config.toml .devcontainer/local.env || true'",
 
   "customizations": {
     "vscode": {
+      "settings": {
+        "remote.extensionKind": { "openai.chatgpt": "workspace" },
+        "remote.localPortHost": "127.0.0.1"
+      },
       "extensions": [
         "golang.go",
         "ms-python.python",
