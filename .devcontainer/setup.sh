@@ -19,6 +19,8 @@ if ! grep -q 'npm-global/bin' "$HOME/.bashrc" 2>/dev/null; then
   echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> "$HOME/.bashrc"
 fi
 
+pip install -r requirements.txt
+
 # --- Optional: sanity checks (won't fail the build if one is missing) ---
 echo "== Tool versions =="
 ( python --version || true )

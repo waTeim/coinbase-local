@@ -13,7 +13,7 @@ from .server import create_app
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Coinbase Advanced Trade FastAPI server")
     parser.add_argument("products", nargs="*", help="Product IDs to subscribe to (e.g. BTC-USD ETH-USD)")
-    parser.add_argument("--port", type=int, default=None, help="Port to bind the FastAPI app (default 63200 or PORT env)")
+    parser.add_argument("--port", type=int, default=None, help="Port to bind the FastAPI app (default 4201 or PORT env)")
     parser.add_argument("--api-key", dest="api_key", default=None, help="Coinbase API key")
     parser.add_argument("--api-secret", dest="api_secret", default=None, help="Coinbase API secret (base64)")
     parser.add_argument("--api-passphrase", dest="api_passphrase", default=None, help="Coinbase API passphrase")

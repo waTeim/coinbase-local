@@ -13,7 +13,7 @@
   "runArgs": [
     "--net=cb_local",
     "--net-alias=cache",
-    "-p", "63200:63200",
+    "-p", "4201:4201",
     "--env-file", "${localWorkspaceFolder}/.devcontainer/local.env"
   ],
 

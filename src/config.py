@@ -78,7 +78,7 @@ def _resolve_credentials(
 @dataclass
 class AppConfig:
     products: List[str] = field(default_factory=list)
-    port: int = 63200
+    port: int = 4201
     rest_url: str = "https://api.coinbase.com/api/v3"
     ws_url: str = "wss://advanced-trade-ws.coinbase.com"
     api_key: Optional[str] = None
@@ -102,7 +102,7 @@ class AppConfig:
         if not resolved_products:
             raise ValueError("At least one product must be provided via --products or PRODUCTS env var.")
 
-        resolved_port = port or int(os.getenv("PORT", "63200"))
+        resolved_port = port or int(os.getenv("PORT", "4201"))
         resolved_key, resolved_secret, resolved_passphrase = _resolve_credentials(api_key, api_secret, api_passphrase)
 
         return cls(
