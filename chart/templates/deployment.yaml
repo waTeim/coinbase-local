@@ -27,8 +27,8 @@ spec:
       serviceAccountName: {{ include "coinbase-local.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- $apiSecretName := required "values.apiSecret.secretName must be set" .Values.apiSecret.secretName }}
-      {{- $configFile := default "app-config.toml" .Values.appConfig.fileName }}
+      {{- $apiSecretName := required "values.apiSecretName must be set" .Values.apiSecretName }}
+      {{- $configFile := default "app-config.toml" .Values.config.fileName }}
       {{- $configPath := printf "/app/config/%s" $configFile }}
       containers:
         - name: {{ .Chart.Name }}
@@ -48,11 +48,11 @@ spec:
               protocol: TCP
           livenessProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: http
           readinessProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: http
           volumeMounts:
             - name: app-config

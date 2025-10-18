@@ -146,6 +146,12 @@ class CoinbaseOrderBookManager:
                 pass
             self._ws_task = None
 
+    def is_running(self) -> bool:
+        return self._running.is_set()
+
+    def is_ready(self) -> bool:
+        return self.is_running() and all(book.ready.is_set() for book in self._books.values())
+
     async def _prime_snapshots(self) -> None:
         for product_id in self._config.products:
             try:

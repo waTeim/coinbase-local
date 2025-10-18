@@ -64,8 +64,6 @@ You can configure credentials via CLI flags, environment variables, or files:
   (`organizations/{org}/apiKeys/{key}`) **or** a path to a JSON key bundle.
 - `--api-secret` / `COINBASE_API_SECRET` – The EC private key PEM or a path to a
   PEM file. `COINBASE_API_SECRET_FILE` is also supported.
-- `--api-passphrase` / `COINBASE_API_PASSPHRASE` – Optional passphrase if the
-  key bundle includes one.
 - `--port` / `PORT` – Listening port (defaults to `63200`).
 - `--products` CLI arguments or `PRODUCTS` env var – One or more product IDs
   (defaults to the CLI list; env var may use comma, colon, or space separators).

@@ -5,7 +5,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional
 
 try:  # pragma: no cover - Python <3.11 fallback
     import tomllib  # type: ignore[attr-defined]
@@ -82,12 +82,11 @@ def _read_file_text(path_value: Optional[str | Path], base_dir: Optional[Path]) 
 def _apply_credentials_file(
     api_key: Optional[str],
     api_secret: Optional[str],
-    api_passphrase: Optional[str],
     file_value: Optional[str | Path],
     base_dir: Optional[Path],
-) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+) -> tuple[Optional[str], Optional[str]]:
     if not file_value:
-        return api_key, api_secret, api_passphrase
+        return api_key, api_secret
     path = _resolve_path(file_value, base_dir)
     if not path.is_file():
         raise ValueError(f"Credential file '{path}' does not exist.")
@@ -99,12 +98,11 @@ def _apply_credentials_file(
     except json.JSONDecodeError:
         if api_secret is None:
             api_secret = data
-        return api_key, api_secret, api_passphrase
+        return api_key, api_secret
 
     api_key = api_key or payload.get("id") or payload.get("key") or payload.get("keyName") or payload.get("name") or payload.get("keyId")
     api_secret = api_secret or payload.get("privateKey") or payload.get("secret")
-    api_passphrase = api_passphrase or payload.get("passphrase")
-    return api_key, api_secret, api_passphrase
+    return api_key, api_secret
 
 
 @dataclass
@@ -115,7 +113,6 @@ class AppConfig:
     ws_url: str = "wss://advanced-trade-ws.coinbase.com"
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
-    api_passphrase: Optional[str] = None
     market_order_buffer: int = 2000
     http_timeout: float = 10.0
     log_level: str = "info"
@@ -171,29 +168,23 @@ class AppConfig:
 
         api_key = _normalize_optional_str(getattr(args, "api_key", None)) or _normalize_optional_str(api_config.get("key"))
         api_secret = _normalize_optional_str(getattr(args, "api_secret", None)) or _normalize_optional_str(api_config.get("secret"))
-        api_passphrase = _normalize_optional_str(getattr(args, "api_passphrase", None)) or _normalize_optional_str(api_config.get("passphrase"))
 
         cli_key_file = getattr(args, "api_key_file", None)
         cli_secret_file = getattr(args, "api_secret_file", None)
-        cli_passphrase_file = getattr(args, "api_passphrase_file", None)
         cli_credentials_file = getattr(args, "api_credentials_file", None)
 
         cfg_key_file = api_config.get("key_file")
         cfg_secret_file = api_config.get("secret_file")
-        cfg_passphrase_file = api_config.get("passphrase_file")
         cfg_credentials_file = api_config.get("credentials_file")
 
         if api_key is None:
             api_key = _read_file_text(cli_key_file or cfg_key_file, None if cli_key_file else base_dir)
         if api_secret is None:
             api_secret = _read_file_text(cli_secret_file or cfg_secret_file, None if cli_secret_file else base_dir)
-        if api_passphrase is None:
-            api_passphrase = _read_file_text(cli_passphrase_file or cfg_passphrase_file, None if cli_passphrase_file else base_dir)
 
-        api_key, api_secret, api_passphrase = _apply_credentials_file(
+        api_key, api_secret = _apply_credentials_file(
             api_key,
             api_secret,
-            api_passphrase,
             cli_credentials_file or cfg_credentials_file,
             None if cli_credentials_file else base_dir,
         )
@@ -208,7 +199,6 @@ class AppConfig:
             ws_url=ws_url,
             api_key=api_key,
             api_secret=api_secret,
-            api_passphrase=api_passphrase,
             market_order_buffer=market_order_buffer,
             http_timeout=http_timeout,
             log_level=log_level,

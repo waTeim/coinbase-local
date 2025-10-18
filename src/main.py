@@ -11,6 +11,14 @@ from .config import AppConfig, load_toml_config
 from .server import create_app
 
 
+class HealthzAccessFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            return "/healthz" not in record.getMessage()
+        except Exception:
+            return True
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Coinbase Advanced Trade FastAPI server")
     parser.add_argument("products", nargs="*", help="Product IDs to subscribe to (overrides config if provided)")
@@ -24,9 +32,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--api-key-file", dest="api_key_file", default=None, help="Path to a file containing the API key")
     parser.add_argument("--api-secret", dest="api_secret", default=None, help="Coinbase API secret")
     parser.add_argument("--api-secret-file", dest="api_secret_file", default=None, help="Path to a file containing the API secret")
-    parser.add_argument("--api-passphrase", dest="api_passphrase", default=None, help="Coinbase API passphrase")
-    parser.add_argument("--api-passphrase-file", dest="api_passphrase_file", default=None, help="Path to a file containing the API passphrase")
-    parser.add_argument("--api-credentials-file", dest="api_credentials_file", default=None, help="Path to a JSON file containing key/secret/passphrase")
+    parser.add_argument("--api-credentials-file", dest="api_credentials_file", default=None, help="Path to a JSON file containing key/secret")
     parser.add_argument(
         "--log-level",
         dest="log_level",
@@ -54,6 +60,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         level=getattr(logging, config.log_level.upper()),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    logging.getLogger("uvicorn.access").addFilter(HealthzAccessFilter())
 
     app = create_app(config)
     uvicorn.run(app, host="0.0.0.0", port=config.port, log_level=config.log_level)

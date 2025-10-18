@@ -4,6 +4,7 @@ import logging
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 from .config import AppConfig
 from .orderbook import CoinbaseOrderBookManager
@@ -34,6 +35,13 @@ def create_app(config: AppConfig) -> FastAPI:
         return manager
 
     ManagerDep = Annotated[CoinbaseOrderBookManager, Depends(get_manager)]
+
+    @app.get("/healthz", include_in_schema=False)
+    async def healthz() -> JSONResponse:
+        if manager.is_ready():
+            return JSONResponse({"status": "ok"})
+        status_payload = {"status": "starting"} if manager.is_running() else {"status": "initializing"}
+        return JSONResponse(status_payload, status_code=503)
 
     @app.get("/api/orderBook/interval", response_model=OrderBookIntervalResponse)
     async def get_interval(

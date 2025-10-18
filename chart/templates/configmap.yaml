@@ -1,7 +1,8 @@
-{{- $fileName := default "app-config.toml" .Values.appConfig.fileName }}
-{{- $products := .Values.appConfig.products | default (list) }}
-{{- $settings := .Values.appConfig.settings | default (dict) }}
-{{- $api := .Values.appConfig.api | default (dict) }}
+{{- $fileName := default "app-config.toml" .Values.config.fileName }}
+{{- $servicePort := .Values.service.port }}
+{{- $products := .Values.config.products | default (list) }}
+{{- $settings := .Values.config.settings | default (dict) }}
+{{- $api := .Values.config.api | default (dict) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -11,6 +12,7 @@ metadata:
 data:
   {{ $fileName }}: |-
 {{- printf "products = %s" (include "coinbase-local.tomlArray" $products) | nindent 4 }}
+{{- printf "port = %s" (include "coinbase-local.tomlValue" $servicePort) | nindent 4 }}
 {{- range $key, $value := $settings }}
 {{- $name := $key | replace "-" "_" | lower }}
 {{- printf "%s = %s" $name (include "coinbase-local.tomlValue" $value) | nindent 4 }}

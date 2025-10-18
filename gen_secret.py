@@ -10,7 +10,7 @@ from typing import Dict, Optional
 from kubernetes import client, config
 from kubernetes.config.config_exception import ConfigException
 
-DEFAULT_KEYS = ["api_key", "api_secret", "api_passphrase"]
+DEFAULT_KEYS = ["api_key", "api_secret"]
 
 
 class SecretBuilder:
@@ -128,7 +128,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--namespace", "-n", help="Namespace for the Secret")
     parser.add_argument("--api-key-file", "-k", dest="api_key_file", help="Path to the API key file")
     parser.add_argument("--api-secret-file", "-s", dest="api_secret_file", help="Path to the API secret file")
-    parser.add_argument("--api-passphrase-file", "-p", dest="api_passphrase_file", help="Path to the API passphrase file")
     parser.add_argument("--output", "-o", help="Write manifest to this file instead of stdout")
     parser.add_argument("--force", action="store_true", help="Overwrite the output file if it exists")
     parser.add_argument("--submit", action="store_true", help="Apply the secret to the current Kubernetes cluster")
