@@ -1,23 +1,10 @@
-#-------------------------------------------------------------------------------------------------------------
-# Copyright (c) Microsoft Corporation. All rights reserved.
-# Licensed under the MIT License. See https://go.microsoft.com/fwlink/?linkid=2090316 for license information.
-#-------------------------------------------------------------------------------------------------------------
+## syntax=docker/dockerfile:1
+FROM mcr.microsoft.com/devcontainers/base:ubuntu
 
-# To fully customize the contents of this image, use the following Dockerfile instead:
-# https://github.com/microsoft/vscode-dev-containers/tree/v0.112.0/containers/javascript-node-12/.devcontainer/Dockerfile
-FROM node:11
+# Add anything you ALWAYS want baked in (keep minimal)
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git vim net-tools
 
-# ** [Optional] Uncomment this section to install additional packages. **
-#
-# ENV DEBIAN_FRONTEND=noninteractive
-# RUN apt-get update \
-#    && apt-get -y install --no-install-recommends <your-package-list-here> \
-#    #
-#    # Clean up
-#    && apt-get autoremove -y \
-#    && apt-get clean -y \
-#    && rm -rf /var/lib/apt/lists/*
-# ENV DEBIAN_FRONTEND=dialog
-
-RUN npm install -g typescript && npm install -g ts-api
-EXPOSE 63200
+# The base image already has user `vscode` with passwordless sudo.
+USER vscode
+ENV HOME=/home/vscode
+ENV PATH=/home/vscode/.local/bin:/home/vscode/go/bin:$PATH
