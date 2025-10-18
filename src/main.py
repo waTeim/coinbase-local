@@ -2,25 +2,35 @@ from __future__ import annotations
 
 import argparse
 import logging
+from pathlib import Path
 from typing import Sequence
 
 import uvicorn
 
-from .config import AppConfig
+from .config import AppConfig, load_toml_config
 from .server import create_app
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Coinbase Advanced Trade FastAPI server")
-    parser.add_argument("products", nargs="*", help="Product IDs to subscribe to (e.g. BTC-USD ETH-USD)")
-    parser.add_argument("--port", type=int, default=None, help="Port to bind the FastAPI app (default 4201 or PORT env)")
+    parser.add_argument("products", nargs="*", help="Product IDs to subscribe to (overrides config if provided)")
+    parser.add_argument("--config", dest="config", default=None, help="Path to a TOML config file")
+    parser.add_argument("--port", type=int, default=None, help="Port to bind the FastAPI app")
+    parser.add_argument("--rest-url", dest="rest_url", default=None, help="Override the REST API base URL")
+    parser.add_argument("--ws-url", dest="ws_url", default=None, help="Override the websocket feed URL")
+    parser.add_argument("--market-order-buffer", dest="market_order_buffer", type=int, default=None, help="Number of market trades to retain in memory")
+    parser.add_argument("--http-timeout", dest="http_timeout", type=float, default=None, help="HTTP client timeout in seconds")
     parser.add_argument("--api-key", dest="api_key", default=None, help="Coinbase API key")
-    parser.add_argument("--api-secret", dest="api_secret", default=None, help="Coinbase API secret (base64)")
+    parser.add_argument("--api-key-file", dest="api_key_file", default=None, help="Path to a file containing the API key")
+    parser.add_argument("--api-secret", dest="api_secret", default=None, help="Coinbase API secret")
+    parser.add_argument("--api-secret-file", dest="api_secret_file", default=None, help="Path to a file containing the API secret")
     parser.add_argument("--api-passphrase", dest="api_passphrase", default=None, help="Coinbase API passphrase")
+    parser.add_argument("--api-passphrase-file", dest="api_passphrase_file", default=None, help="Path to a file containing the API passphrase")
+    parser.add_argument("--api-credentials-file", dest="api_credentials_file", default=None, help="Path to a JSON file containing key/secret/passphrase")
     parser.add_argument(
         "--log-level",
         dest="log_level",
-        default="info",
+        default=None,
         choices=["critical", "error", "warning", "info", "debug"],
         help="Logging level for uvicorn",
     )
@@ -28,14 +38,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def build_config(args: argparse.Namespace) -> AppConfig:
+    config_path = Path(args.config).expanduser() if args.config else None
     try:
-        return AppConfig.from_args(
-            products=args.products if args.products else None,
-            port=args.port,
-            api_key=args.api_key,
-            api_secret=args.api_secret,
-            api_passphrase=args.api_passphrase,
-        )
+        config_data = load_toml_config(config_path)
+        return AppConfig.from_sources(config_data, args, config_path=config_path)
     except ValueError as exc:
         raise SystemExit(str(exc))
 
@@ -44,10 +50,13 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
     config = build_config(args)
 
-    logging.basicConfig(level=getattr(logging, args.log_level.upper()), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=getattr(logging, config.log_level.upper()),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
     app = create_app(config)
-    uvicorn.run(app, host="0.0.0.0", port=config.port, log_level=args.log_level)
+    uvicorn.run(app, host="0.0.0.0", port=config.port, log_level=config.log_level)
 
 
 if __name__ == "__main__":

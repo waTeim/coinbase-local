@@ -5,7 +5,7 @@
 replicaCount: 1
 
 image:
-  repository: nginx
+  repository: coinbase-local
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
@@ -38,7 +38,7 @@ securityContext: {}
 
 service:
   type: ClusterIP
-  port: 80
+  port: 4201
 
 ingress:
   enabled: false
@@ -74,6 +74,28 @@ autoscaling:
   maxReplicas: 100
   targetCPUUtilizationPercentage: 80
   # targetMemoryUtilizationPercentage: 80
+
+args: []
+
+appConfig:
+  fileName: app-config.toml
+  products:
+    - BTC-USD
+  settings:
+    port: 4201
+    rest_url: "https://api.coinbase.com/api/v3"
+    ws_url: "wss://advanced-trade-ws.coinbase.com"
+    market_order_buffer: 2000
+    http_timeout: 10.0
+    log_level: "info"
+  api:
+    key_file: "/app/secrets/coinbase/api_key"
+    secret_file: "/app/secrets/coinbase/api_secret"
+    passphrase_file: "/app/secrets/coinbase/api_passphrase"
+    credentials_file: ""
+
+apiSecret:
+  secretName: ""
 
 nodeSelector: {}
 

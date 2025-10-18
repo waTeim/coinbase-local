@@ -1,0 +1,24 @@
+{{- $fileName := default "app-config.toml" .Values.appConfig.fileName }}
+{{- $products := .Values.appConfig.products | default (list) }}
+{{- $settings := .Values.appConfig.settings | default (dict) }}
+{{- $api := .Values.appConfig.api | default (dict) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "coinbase-local.fullname" . }}-config
+  labels:
+    {{- include "coinbase-local.labels" . | nindent 4 }}
+data:
+  {{ $fileName }}: |-
+{{- printf "products = %s" (include "coinbase-local.tomlArray" $products) | nindent 4 }}
+{{- range $key, $value := $settings }}
+{{- $name := $key | replace "-" "_" | lower }}
+{{- printf "%s = %s" $name (include "coinbase-local.tomlValue" $value) | nindent 4 }}
+{{- end }}
+{{- if $api }}
+{{ "\n[api]" | nindent 4 }}
+{{- range $key, $value := $api }}
+{{- $name := $key | replace "-" "_" | lower }}
+{{- printf "%s = %s" $name (include "coinbase-local.tomlValue" $value) | nindent 4 }}
+{{- end }}
+{{- end }}

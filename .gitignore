@@ -17,3 +17,6 @@ auth
 .DS_Store
 .DS_Store?
 ._*
+
+# Local build config
+make.env

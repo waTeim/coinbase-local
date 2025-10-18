@@ -60,3 +60,28 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Format a TOML literal value
+*/}}
+{{- define "coinbase-local.tomlValue" -}}
+{{- $value := . -}}
+{{- if kindIs "int" $value -}}
+{{ $value }}
+{{- else if kindIs "int64" $value -}}
+{{ $value }}
+{{- else if kindIs "float64" $value -}}
+{{ $value }}
+{{- else if kindIs "bool" $value -}}
+{{ if $value }}true{{ else }}false{{ end }}
+{{- else -}}
+{{ $value | quote }}
+{{- end -}}
+{{- end }}
+
+{{/*
+Format a TOML array from a list of values
+*/}}
+{{- define "coinbase-local.tomlArray" -}}
+[{{- range $index, $item := . -}}{{- if gt $index 0 }}, {{ end -}}{{- include "coinbase-local.tomlValue" $item -}}{{- end -}}]
+{{- end }}
