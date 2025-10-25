@@ -476,10 +476,30 @@ class CoinbaseOrderBookManager:
         *,
         side: Literal["ask", "bid"],
     ) -> List[List[Any]]:
-        if not levels:
+        if depth <= 0:
             return []
 
+        if not levels:
+            # With no levels, synthesize prices from the base bucket derived from
+            # the best-known price for the side (fall back to 0 if unknown).
+            best_price = Decimal("0")
+            if side == "ask":
+                base_idx = int((best_price / aggregation).to_integral_value(rounding=ROUND_UP))
+                def bucket_price(i: int) -> Decimal:
+                    return (Decimal(base_idx + i) * aggregation)
+            else:
+                base_idx = int((best_price / aggregation).to_integral_value(rounding=ROUND_DOWN))
+                def bucket_price(i: int) -> Decimal:
+                    return (Decimal(base_idx - i) * aggregation)
+
+            return [[
+                _dec_to_str(bucket_price(i)),
+                _dec_to_str(Decimal("0")),
+                0,
+            ] for i in range(depth)]
+
         bucket_totals: Dict[int, Tuple[Decimal, Decimal, int]] = {}
+
         if side == "ask":
             base_index = int((levels[0].price / aggregation).to_integral_value(rounding=ROUND_UP))
             for level in levels:
@@ -494,8 +514,11 @@ class CoinbaseOrderBookManager:
                 size_sum += level.size
                 order_sum += level.num_orders or 1
                 bucket_totals[relative] = (price_sum, size_sum, order_sum)
-            order_keys = range(depth)
-        else:
+
+            def bucket_price(i: int) -> Decimal:
+                return (Decimal(base_index + i) * aggregation)
+
+        else:  # bid
             base_index = int((levels[0].price / aggregation).to_integral_value(rounding=ROUND_DOWN))
             for level in levels:
                 bucket_index = int((level.price / aggregation).to_integral_value(rounding=ROUND_DOWN))
@@ -509,20 +532,31 @@ class CoinbaseOrderBookManager:
                 size_sum += level.size
                 order_sum += level.num_orders or 1
                 bucket_totals[relative] = (price_sum, size_sum, order_sum)
-            order_keys = range(depth)
+
+            def bucket_price(i: int) -> Decimal:
+                return (Decimal(base_index - i) * aggregation)
 
         results: List[List[Any]] = []
-        for idx in order_keys:
+        for idx in range(depth):
             price_sum, size_sum, order_sum = bucket_totals.get(idx, (Decimal("0"), Decimal("0"), 0))
-            if size_sum <= 0:
-                continue
-            average_price = price_sum / size_sum
-            results.append([
-                _dec_to_str(average_price),
-                _dec_to_str(size_sum),
-                order_sum,
-            ])
-        return results[:depth]
+            if size_sum > 0:
+                avg_price = price_sum / size_sum
+                results.append([
+                    _dec_to_str(avg_price),
+                    _dec_to_str(size_sum),
+                    order_sum,
+                ])
+            else:
+                # Emit an empty bucket with its representative price.
+                bp = bucket_price(idx)
+                results.append([
+                    _dec_to_str(bp),
+                    _dec_to_str(Decimal("0")),
+                    0,
+                ])
+
+        return results  # guaranteed len == depth
+
 
 
 __all__ = ["CoinbaseOrderBookManager", "ProductOrderBook"]
