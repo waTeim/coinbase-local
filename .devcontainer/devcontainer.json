@@ -1,37 +1,34 @@
+
 {
   
-  "name": "Ubuntu + Go + Python + Node (MCP/Codex)",
+  "name": "Ubuntu + Go + Python",
   "dockerFile": "Dockerfile",
+
+  // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+  // "remoteUser": "root"
   "remoteUser": "vscode",
 
   "features": {
-    "ghcr.io/devcontainers/features/python:1": { "version": "3.11" },
+    "ghcr.io/jungaretti/features/make:1": {},
     "ghcr.io/devcontainers/features/go:1":     { "version": "1.24" },
-    "ghcr.io/devcontainers/features/node:1":   { "version": "22" }
+    "ghcr.io/devcontainers/features/node:1": { "version": "lts" },
+    "ghcr.io/devcontainers/features/python:1": { "version": "3.12" }
   },
 
   "runArgs": [
-    "--net=cb_local",
-    "--net-alias=cache",
-    "-p", "4201:4201",
-    "--env-file", "${localWorkspaceFolder}/.devcontainer/local.env"
+    "--env-file", "${localEnv:HOME}${localEnv:USERPROFILE}/.vscode-projects/${localWorkspaceFolderBasename}/local.env"
   ],
 
-  "forwardPorts": [1455],
-  "portsAttributes": {
-    "1455": { "onAutoForward": "openBrowser", "protocol": "http", "localPort": 1455 }
-  },
-
-  // Mount a host directory OUTSIDE the repo so Codex can read/write its config
-  // (keeps it persistent and out of git). Inside the container we use ~/.codex.
+  // Mount Claude credentials to persist across container rebuilds, per-project
   "mounts": [
-    "source=${localWorkspaceFolder}/.devcontainer/codex,target=/home/vscode/.codex,type=bind,consistency=cached"
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.vscode-projects/${localWorkspaceFolderBasename}/claude/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.vscode-projects/${localWorkspaceFolderBasename}/claude/.claude.json,target=/home/vscode/.claude.json,type=bind,consistency=cached",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.vscode-projects/${localWorkspaceFolderBasename}/claude/.claude.json.backup,target=/home/vscode/.claude.json.backup,type=bind,consistency=cached",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.vscode-projects/${localWorkspaceFolderBasename}/codex,target=/home/vscode/.codex,type=bind,consistency=cached"
   ],
 
-  "postCreateCommand": "bash -lc '.devcontainer/setup.sh'",
-
-  // Create host-side files/dirs if missing (runs on the HOST before container start)
-  "initializeCommand": "bash -lc 'mkdir -p .devcontainer/codex; touch .devcontainer/codex/config.toml .devcontainer/local.env || true'",
+  "initializeCommand": "bash -lc '.devcontainer/init.sh ${localEnv:HOME}${localEnv:USERPROFILE}/.vscode-projects/${localWorkspaceFolderBasename}'",
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
 
   "customizations": {
     "vscode": {
@@ -42,7 +39,6 @@
       "extensions": [
         "golang.go",
         "ms-python.python",
-        "ms-python.vscode-pylance",
         "openai.chatgpt"
       ]
     }
