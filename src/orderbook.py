@@ -87,6 +87,10 @@ class ProductOrderBook:
         if not self.ready.is_set() and self.asks and self.bids:
             self.ready.set()
 
+    def clear_ready(self) -> None:
+        """Clear the ready state, typically called when connection is lost."""
+        self.ready.clear()
+
     def record_trade(self, entry: TradeEntry) -> None:
         self.market_orders.appendleft(entry)
         if entry.sequence > self.sequence:
@@ -227,7 +231,15 @@ class CoinbaseOrderBookManager:
             asks = book.sorted_asks()
             bids = book.sorted_bids()
             if not asks or not bids:
-                raise ValueError(f"Order book for {product_id} is empty")
+                logger.error(
+                    "Order book for %s is empty (asks=%d, bids=%d, ready=%s). "
+                    "This may indicate a WebSocket reconnection issue.",
+                    product_id, len(asks), len(bids), book.ready.is_set()
+                )
+                raise ValueError(
+                    f"Order book for {product_id} is empty. "
+                    "The service may be reconnecting to Coinbase. Please retry in a few seconds."
+                )
 
             midpoint = (asks[0].price + bids[0].price) / Decimal("2")
             now = datetime.now(timezone.utc)
@@ -313,8 +325,29 @@ class CoinbaseOrderBookManager:
         while self._running.is_set():
             try:
                 await self._ws_client.open_async()
+
+                # Check if any books are empty and reload snapshots if needed
+                for product_id in self._config.products:
+                    book = self._books[product_id]
+                    needs_reload = False
+                    async with book.lock:
+                        if not book.asks or not book.bids:
+                            logger.info("Order book for %s is empty, reloading snapshot", product_id)
+                            # Clear ready state so clients wait for fresh data
+                            book.clear_ready()
+                            needs_reload = True
+                    # Reload snapshot outside the lock to avoid blocking
+                    if needs_reload:
+                        try:
+                            await self._load_snapshot(product_id)
+                        except Exception as exc:
+                            logger.warning("Failed to reload snapshot for %s: %s", product_id, exc)
+
                 await self._ws_client.level2_async(self._config.products)
                 await self._ws_client.market_trades_async(self._config.products)
+
+                # Reset backoff on successful connection
+                backoff = 1
 
                 while self._running.is_set() and self._ws_client.websocket:
                     await asyncio.sleep(1)
@@ -326,6 +359,10 @@ class CoinbaseOrderBookManager:
             except Exception as exc:  # pragma: no cover - defensive
                 logger.exception("Unexpected websocket exception: %s", exc)
             finally:
+                # Clear ready state for all books when connection is lost
+                for book in self._books.values():
+                    book.clear_ready()
+
                 if self._ws_client.websocket:
                     try:
                         await self._ws_client.close_async()
