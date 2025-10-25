@@ -126,9 +126,11 @@ class CoinbaseOrderBookManager:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     async def start(self) -> None:
+        logger.info("Starting CoinbaseOrderBookManager for products: %s", self._config.products)
         await self._prime_snapshots()
         self._loop = asyncio.get_running_loop()
         self._running.set()
+        logger.info("Starting WebSocket connection loop")
         self._ws_task = asyncio.create_task(self._websocket_loop())
 
     async def stop(self) -> None:
@@ -157,14 +159,21 @@ class CoinbaseOrderBookManager:
         return self.is_running() and all(book.ready.is_set() for book in self._books.values())
 
     async def _prime_snapshots(self) -> None:
+        logger.info("Priming initial snapshots for %d products: %s", len(self._config.products), self._config.products)
         for product_id in self._config.products:
             try:
                 await self._load_snapshot(product_id)
             except Exception as exc:  # pragma: no cover - defensive
-                logger.warning("Failed to load initial snapshot for %s: %s", product_id, exc)
+                logger.error(
+                    "Failed to load initial snapshot for %s: %s. Service will attempt to reload on WebSocket connection.",
+                    product_id, exc, exc_info=True
+                )
 
     async def _load_snapshot(self, product_id: str) -> None:
+        response = None
+        used_public = False
         try:
+            logger.debug("Fetching authenticated snapshot for %s", product_id)
             response = await asyncio.to_thread(
                 self._rest_client.get_product_book,
                 product_id,
@@ -175,6 +184,7 @@ class CoinbaseOrderBookManager:
                 "API credentials unavailable for %s snapshot; falling back to public endpoint",
                 product_id,
             )
+            used_public = True
             response = await asyncio.to_thread(
                 self._rest_client.get_public_product_book,
                 product_id,
@@ -186,6 +196,7 @@ class CoinbaseOrderBookManager:
                 logger.warning(
                     "Snapshot unauthorized for %s; falling back to public endpoint", product_id
                 )
+                used_public = True
                 response = await asyncio.to_thread(
                     self._rest_client.get_public_product_book,
                     product_id,
@@ -194,28 +205,84 @@ class CoinbaseOrderBookManager:
             else:
                 logger.error("Failed to pull snapshot for %s: %s", product_id, exc)
                 raise
+        except Exception as exc:
+            logger.error("Unexpected error fetching snapshot for %s: %s", product_id, exc, exc_info=True)
+            raise
+
+        logger.debug("Snapshot response type: %s, public=%s", type(response).__name__, used_public)
 
         pricebook = getattr(response, "pricebook", None)
         if pricebook is None:
+            logger.error(
+                "Snapshot payload missing pricebook for %s. Response attributes: %s",
+                product_id,
+                dir(response) if response else "None"
+            )
             raise ValueError(f"Snapshot payload missing pricebook for {product_id}")
 
+        raw_bids = getattr(pricebook, "bids", []) or []
+        raw_asks = getattr(pricebook, "asks", []) or []
+
+        logger.debug(
+            "Pricebook for %s has %d raw bids, %d raw asks",
+            product_id, len(raw_bids), len(raw_asks)
+        )
+
+        if len(raw_bids) == 0 and len(raw_asks) == 0:
+            logger.error(
+                "Pricebook for %s is completely empty. Pricebook attributes: %s",
+                product_id,
+                dir(pricebook)
+            )
+
         bids: List[PriceLevel] = []
-        for entry in getattr(pricebook, "bids", []) or []:
-            price = self._safe_decimal(entry.price)
-            size = self._safe_decimal(entry.size)
+        skipped_bids = 0
+        for entry in raw_bids:
+            price = self._safe_decimal(getattr(entry, "price", None))
+            size = self._safe_decimal(getattr(entry, "size", None))
             if price is None or size is None:
+                skipped_bids += 1
+                if skipped_bids <= 3:  # Log first few failures
+                    logger.debug(
+                        "Skipping bid entry for %s: price=%s, size=%s, entry type=%s",
+                        product_id, getattr(entry, "price", None), getattr(entry, "size", None), type(entry).__name__
+                    )
                 continue
             bids.append(PriceLevel(price=price, size=size, num_orders=1))
+
+        if skipped_bids > 0:
+            logger.warning("Skipped %d invalid bid entries for %s", skipped_bids, product_id)
+
         bids.sort(key=lambda level: level.price, reverse=True)
 
         asks: List[PriceLevel] = []
-        for entry in getattr(pricebook, "asks", []) or []:
-            price = self._safe_decimal(entry.price)
-            size = self._safe_decimal(entry.size)
+        skipped_asks = 0
+        for entry in raw_asks:
+            price = self._safe_decimal(getattr(entry, "price", None))
+            size = self._safe_decimal(getattr(entry, "size", None))
             if price is None or size is None:
+                skipped_asks += 1
+                if skipped_asks <= 3:  # Log first few failures
+                    logger.debug(
+                        "Skipping ask entry for %s: price=%s, size=%s, entry type=%s",
+                        product_id, getattr(entry, "price", None), getattr(entry, "size", None), type(entry).__name__
+                    )
                 continue
             asks.append(PriceLevel(price=price, size=size, num_orders=1))
+
+        if skipped_asks > 0:
+            logger.warning("Skipped %d invalid ask entries for %s", skipped_asks, product_id)
+
         asks.sort(key=lambda level: level.price)
+
+        if len(bids) == 0 or len(asks) == 0:
+            logger.warning(
+                "REST snapshot for %s is empty: %d bids, %d asks (from %d raw bids, %d raw asks). "
+                "Will rely on WebSocket snapshot instead.",
+                product_id, len(bids), len(asks), len(raw_bids), len(raw_asks)
+            )
+            # Don't raise - let WebSocket populate the book instead
+            return
 
         book = self._books[product_id]
         async with book.lock:
@@ -324,7 +391,9 @@ class CoinbaseOrderBookManager:
         backoff = 1
         while self._running.is_set():
             try:
+                logger.info("Opening WebSocket connection to Coinbase")
                 await self._ws_client.open_async()
+                logger.info("WebSocket connection established")
 
                 # Check if any books are empty and reload snapshots if needed
                 for product_id in self._config.products:
@@ -343,12 +412,15 @@ class CoinbaseOrderBookManager:
                         except Exception as exc:
                             logger.warning("Failed to reload snapshot for %s: %s", product_id, exc)
 
+                logger.info("Subscribing to level2 channel for products: %s", self._config.products)
                 await self._ws_client.level2_async(self._config.products)
+                logger.info("Subscribing to market_trades channel for products: %s", self._config.products)
                 await self._ws_client.market_trades_async(self._config.products)
 
                 # Reset backoff on successful connection
                 backoff = 1
 
+                logger.info("WebSocket subscriptions complete, listening for updates")
                 while self._running.is_set() and self._ws_client.websocket:
                     await asyncio.sleep(1)
                     self._ws_client.raise_background_exception()
@@ -424,6 +496,10 @@ class CoinbaseOrderBookManager:
             asks.sort(key=lambda level: level.price)
             async with book.lock:
                 book.update_from_snapshot(bids, asks, sequence)
+            logger.info(
+                "WebSocket snapshot received for %s: %d bids, %d asks (sequence=%d)",
+                product_id, len(bids), len(asks), sequence
+            )
             return
 
         changes: List[Tuple[str, Decimal, Decimal, int]] = []

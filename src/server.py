@@ -38,10 +38,22 @@ def create_app(config: AppConfig) -> FastAPI:
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> JSONResponse:
+        """Liveness probe - returns 200 if the service is alive (even if not ready)."""
         if manager.is_ready():
-            return JSONResponse({"status": "ok"})
-        status_payload = {"status": "starting"} if manager.is_running() else {"status": "initializing"}
-        return JSONResponse(status_payload, status_code=503)
+            return JSONResponse({"status": "ok", "ready": True})
+        if manager.is_running():
+            # Service is alive and waiting for WebSocket snapshots - return 200 to prevent restarts
+            return JSONResponse({"status": "starting", "ready": False})
+        # Service hasn't started yet
+        return JSONResponse({"status": "initializing", "ready": False}, status_code=503)
+
+    @app.get("/readyz", include_in_schema=False)
+    async def readyz() -> JSONResponse:
+        """Readiness probe - returns 200 only when ready to serve traffic."""
+        if manager.is_ready():
+            return JSONResponse({"status": "ready"})
+        status = "starting" if manager.is_running() else "not_ready"
+        return JSONResponse({"status": status}, status_code=503)
 
     @app.get("/api/orderBook/interval", response_model=OrderBookIntervalResponse)
     async def get_interval(
