@@ -124,6 +124,8 @@ class CoinbaseOrderBookManager:
         self._ws_task: Optional[asyncio.Task] = None
         self._running = asyncio.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._last_message_time: Optional[datetime] = None
+        self._heartbeat_timeout = 30  # seconds without messages triggers reconnection
 
     async def start(self) -> None:
         logger.info("Starting CoinbaseOrderBookManager for products: %s", self._config.products)
@@ -157,6 +159,17 @@ class CoinbaseOrderBookManager:
 
     def is_ready(self) -> bool:
         return self.is_running() and all(book.ready.is_set() for book in self._books.values())
+
+    def _handle_task_exception(self, task: asyncio.Task) -> None:
+        """Callback to log exceptions from WebSocket message processing tasks."""
+        try:
+            task.result()  # Raises exception if task failed
+        except Exception as exc:
+            logger.error(
+                "WebSocket message processing task failed: %s",
+                exc,
+                exc_info=True
+            )
 
     async def _prime_snapshots(self) -> None:
         logger.info("Priming initial snapshots for %d products: %s", len(self._config.products), self._config.products)
@@ -287,7 +300,7 @@ class CoinbaseOrderBookManager:
         book = self._books[product_id]
         async with book.lock:
             book.update_from_snapshot(bids=bids, asks=asks, sequence=0)
-        logger.info(
+        logger.debug(
             "Snapshot primed for %s with %d bids / %d asks", product_id, len(bids), len(asks)
         )
 
@@ -401,7 +414,7 @@ class CoinbaseOrderBookManager:
                     needs_reload = False
                     async with book.lock:
                         if not book.asks or not book.bids:
-                            logger.info("Order book for %s is empty, reloading snapshot", product_id)
+                            logger.debug("Order book for %s is empty, reloading snapshot", product_id)
                             # Clear ready state so clients wait for fresh data
                             book.clear_ready()
                             needs_reload = True
@@ -424,6 +437,17 @@ class CoinbaseOrderBookManager:
                 while self._running.is_set() and self._ws_client.websocket:
                     await asyncio.sleep(1)
                     self._ws_client.raise_background_exception()
+
+                    # Check for stalled connection (no messages received recently)
+                    if self._last_message_time:
+                        elapsed = (datetime.now(timezone.utc) - self._last_message_time).total_seconds()
+                        if elapsed > self._heartbeat_timeout:
+                            logger.warning(
+                                "No WebSocket messages received for %.1f seconds (timeout=%d), forcing reconnection",
+                                elapsed,
+                                self._heartbeat_timeout
+                            )
+                            break  # Exit loop to trigger reconnection
             except WSClientConnectionClosedException as exc:
                 logger.warning("Websocket connection closed: %s", exc)
             except WSClientException as exc:
@@ -448,6 +472,7 @@ class CoinbaseOrderBookManager:
     def _on_ws_message(self, message: str) -> None:
         if not self._loop:
             return
+        self._last_message_time = datetime.now(timezone.utc)
         try:
             payload = json.loads(message)
         except json.JSONDecodeError:
@@ -456,18 +481,28 @@ class CoinbaseOrderBookManager:
         self._loop.call_soon_threadsafe(self._enqueue_ws_payload, payload)
 
     def _enqueue_ws_payload(self, payload: Dict[str, Any]) -> None:
-        asyncio.create_task(self._process_ws_payload(payload))
+        task = asyncio.create_task(self._process_ws_payload(payload))
+        task.add_done_callback(self._handle_task_exception)
 
     async def _process_ws_payload(self, payload: Dict[str, Any]) -> None:
-        response = WebsocketResponse(payload)
-        channel = response.channel
+        try:
+            response = WebsocketResponse(payload)
+            channel = response.channel
 
-        if channel == "l2_data":
-            for event in response.events or []:
-                await self._handle_level2_event(response, event)
-        elif channel == "market_trades":
-            for event in response.events or []:
-                await self._handle_market_trades_event(response, event)
+            if channel == "l2_data":
+                for event in response.events or []:
+                    await self._handle_level2_event(response, event)
+            elif channel == "market_trades":
+                for event in response.events or []:
+                    await self._handle_market_trades_event(response, event)
+        except Exception as exc:
+            logger.error(
+                "Failed to process WebSocket payload (channel=%s): %s",
+                payload.get("channel", "unknown"),
+                exc,
+                exc_info=True
+            )
+            # Don't re-raise - allow processing of subsequent messages to continue
 
     async def _handle_level2_event(self, response: WebsocketResponse, event: Any) -> None:
         product_id = getattr(event, "product_id", None)
@@ -496,7 +531,7 @@ class CoinbaseOrderBookManager:
             asks.sort(key=lambda level: level.price)
             async with book.lock:
                 book.update_from_snapshot(bids, asks, sequence)
-            logger.info(
+            logger.debug(
                 "WebSocket snapshot received for %s: %d bids, %d asks (sequence=%d)",
                 product_id, len(bids), len(asks), sequence
             )

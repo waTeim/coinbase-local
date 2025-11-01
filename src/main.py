@@ -60,10 +60,21 @@ def main(argv: Sequence[str] | None = None) -> None:
         level=getattr(logging, config.log_level.upper()),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    # Filter out /healthz from access logs
     logging.getLogger("uvicorn.access").addFilter(HealthzAccessFilter())
 
     app = create_app(config)
-    uvicorn.run(app, host="0.0.0.0", port=config.port, log_level=config.log_level)
+
+    # Only show access logs in DEBUG mode
+    show_access_log = config.log_level.upper() == "DEBUG"
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=config.port,
+        log_level=config.log_level,
+        access_log=show_access_log
+    )
 
 
 if __name__ == "__main__":
