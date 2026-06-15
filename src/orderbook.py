@@ -486,6 +486,21 @@ class CoinbaseOrderBookManager:
 
     async def _process_ws_payload(self, payload: Dict[str, Any]) -> None:
         try:
+            # Coinbase's websocket envelope no longer always includes every field
+            # the SDK's WebsocketResponse treats as mandatory (it pops `client_id`,
+            # `timestamp`, `sequence_num`, and `events` with no default). Current
+            # frames omit `client_id`, so the constructor raises KeyError and the
+            # message is dropped by the handler below — meaning *every* l2_data
+            # update is lost and the book never fills. We only use
+            # channel/sequence_num/events, so backfill harmless defaults for any
+            # absent envelope keys before parsing.
+            for key, default in (
+                ("client_id", ""),
+                ("timestamp", ""),
+                ("sequence_num", 0),
+                ("events", []),
+            ):
+                payload.setdefault(key, default)
             response = WebsocketResponse(payload)
             channel = response.channel
 
