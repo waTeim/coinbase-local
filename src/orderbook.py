@@ -26,6 +26,14 @@ logger = logging.getLogger(__name__)
 getcontext().prec = 28
 
 
+class OrderBookNotReady(Exception):
+    """A book is temporarily unavailable (warming up or reconnecting to Coinbase).
+
+    Distinct from ValueError (which signals genuine client errors such as an
+    unknown product) so the API layer can return 503 (transient, retry) not 400.
+    """
+
+
 def _dec_to_str(value: Decimal) -> str:
     normalised = value.normalize()
     return format(normalised, "f")
@@ -316,7 +324,7 @@ class CoinbaseOrderBookManager:
                     "This may indicate a WebSocket reconnection issue.",
                     product_id, len(asks), len(bids), book.ready.is_set()
                 )
-                raise ValueError(
+                raise OrderBookNotReady(
                     f"Order book for {product_id} is empty. "
                     "The service may be reconnecting to Coinbase. Please retry in a few seconds."
                 )
@@ -629,7 +637,7 @@ class CoinbaseOrderBookManager:
         try:
             await asyncio.wait_for(book.ready.wait(), timeout=30)
         except asyncio.TimeoutError as exc:
-            raise ValueError(f"Order book for {book.product_id} is not ready yet") from exc
+            raise OrderBookNotReady(f"Order book for {book.product_id} is not ready yet") from exc
 
     def _aggregate_side(
         self,

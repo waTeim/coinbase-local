@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from .config import AppConfig
-from .orderbook import CoinbaseOrderBookManager
+from .orderbook import CoinbaseOrderBookManager, OrderBookNotReady
 from .schemas import MarketOrderIntervalResponse, OrderBookIntervalResponse
 
 
@@ -64,6 +64,8 @@ def create_app(config: AppConfig) -> FastAPI:
     ) -> OrderBookIntervalResponse:
         try:
             payload = await orderbook.get_interval(product, aggregation, depth)
+        except OrderBookNotReady as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return OrderBookIntervalResponse(**payload)
@@ -76,6 +78,8 @@ def create_app(config: AppConfig) -> FastAPI:
     ) -> MarketOrderIntervalResponse:
         try:
             payload = await orderbook.get_market_orders(product, since)
+        except OrderBookNotReady as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return MarketOrderIntervalResponse(**payload)
