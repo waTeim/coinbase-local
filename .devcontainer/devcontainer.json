@@ -1,7 +1,5 @@
-
 {
-  
-  "name": "Ubuntu + Go + Python",
+  "name": "Ubuntu + Go + Python + Node",
   "dockerFile": "Dockerfile",
 
   // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
@@ -24,23 +22,23 @@
     "source=${localEnv:HOME}${localEnv:USERPROFILE}/.vscode-projects/${localWorkspaceFolderBasename}/claude/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
     "source=${localEnv:HOME}${localEnv:USERPROFILE}/.vscode-projects/${localWorkspaceFolderBasename}/claude/.claude.json,target=/home/vscode/.claude.json,type=bind,consistency=cached",
     "source=${localEnv:HOME}${localEnv:USERPROFILE}/.vscode-projects/${localWorkspaceFolderBasename}/claude/.claude.json.backup,target=/home/vscode/.claude.json.backup,type=bind,consistency=cached",
-    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.vscode-projects/${localWorkspaceFolderBasename}/codex,target=/home/vscode/.codex,type=bind,consistency=cached"
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.vscode-projects/${localWorkspaceFolderBasename}/codex,target=/home/vscode/.codex,type=bind,consistency=cached",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.vscode-projects/${localWorkspaceFolderBasename}/kube-config,target=/home/vscode/.kube/config,type=bind,consistency=cached",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.vscode-projects/${localWorkspaceFolderBasename}/kube-cache,target=/home/vscode/.kube/cache,type=bind,consistency=cached"
   ],
 
-  "initializeCommand": "bash -lc '.devcontainer/init.sh ${localEnv:HOME}${localEnv:USERPROFILE}/.vscode-projects/${localWorkspaceFolderBasename}'",
-  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "initializeCommand": "bash -lc '.devcontainer/init.sh ${localEnv:HOME}${localEnv:USERPROFILE}/.vscode-projects/${localWorkspaceFolderBasename}'"
 
-  "customizations": {
-    "vscode": {
-      "settings": {
-        "remote.extensionKind": { "openai.chatgpt": "workspace" },
-        "remote.localPortHost": "127.0.0.1"
-      },
-      "extensions": [
-        "golang.go",
-        "ms-python.python",
-        "openai.chatgpt"
-      ]
-    }
-  }
+  // Features to add to the dev container. More info: https://containers.dev/features.
+  // "features": {},
+
+  // Use 'forwardPorts' to make a list of ports inside the container available locally.
+  // "forwardPorts": [],
+
+  // Use 'postCreateCommand' to run commands after the container is created.
+  "postCreateCommand": "bash .devcontainer/post-create.sh"
+
+  // Configure tool-specific properties.
+  // "customizations": {},
+
 }
