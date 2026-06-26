@@ -312,7 +312,7 @@ class CoinbaseOrderBookManager:
             "Snapshot primed for %s with %d bids / %d asks", product_id, len(bids), len(asks)
         )
 
-    async def get_interval(self, product_id: str, aggregation: int, depth: int) -> Dict[str, Any]:
+    async def get_interval(self, product_id: str, aggregation: float, depth: int) -> Dict[str, Any]:
         book = self._get_book(product_id)
         await self._ensure_book_ready(book)
         async with book.lock:

@@ -58,7 +58,7 @@ def create_app(config: AppConfig) -> FastAPI:
     @app.get("/api/orderBook/interval", response_model=OrderBookIntervalResponse)
     async def get_interval(
         product: str = Query(..., min_length=3),
-        aggregation: int = Query(0, ge=0),
+        aggregation: float = Query(0, ge=0),
         depth: int = Query(50, gt=0, le=500),
         orderbook: ManagerDep = Depends(get_manager),
     ) -> OrderBookIntervalResponse:

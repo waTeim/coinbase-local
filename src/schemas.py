@@ -10,7 +10,7 @@ PriceLevelTuple = Tuple[str, str, int]
 
 
 class OrderBookIntervalResponse(BaseModel):
-    aggregation: int
+    aggregation: float
     depth: int
     date: datetime
     midpoint: str
